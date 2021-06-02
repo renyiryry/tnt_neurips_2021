@@ -43,10 +43,25 @@ def train_model(home_path = '/home/jupyter/',
     
     print('need to change by if lr decay')
     
-    if algorithm == 'SGD-momentum':
-        args['algorithm'] = 'SGD-momentum'
+    if algorithm == 'SGD-m':
         
         args['momentum_gradient_dampening'] = 0
+        
+        if dataset_name in ['MNIST', 'FACES']:
+            args['algorithm'] = 'SGD-momentum'
+        elif dataset_name in ['CIFAR-10', 'CIFAR-100']:
+            args['algorithm'] = 'SGD-LRdecay-momentum'
+            
+            args['num_epoch_to_decay'] = 60
+            args['lr_decay_rate'] = 0.1
+        else:
+            print('dataset_name')
+            print(dataset_name)
+            sys.exit()
+        
+            
+        
+        
     elif algorithm == 'Adam':
         
         args['RMSprop_epsilon'] = damping_value
@@ -65,7 +80,6 @@ def train_model(home_path = '/home/jupyter/',
         elif dataset_name in ['MNIST', 'FACES']:
             args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
         else:
-            
             print('dataset_name')
             print(dataset_name)
             sys.exit()
