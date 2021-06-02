@@ -3,11 +3,11 @@ from utils_git.utils import *
 
 def train_model(home_path = '/home/jupyter/',
                 dataset_name = 'CIFAR-10',
-#                 model_name = 'All-CNN-C',
                 algorithm = 'KF-BFGS-CNN',
                 lr = 0.3,
-                lambda_damping = 0.3,
-                Adam_epsilon = 1e-4,
+#                 lambda_damping = 0.3,
+#                 Adam_epsilon = 1e-4,
+                damping_value = 1e-8,
                 max_cpu_time = 2000):
     
     print('change default values')
@@ -34,11 +34,8 @@ def train_model(home_path = '/home/jupyter/',
     elif dataset_name == 'FACES':
         args['dataset'] = 'FacesMartens-autoencoder-relu-no-regularization'
     else:
-    
-    
         print('dataset_name')
         print(dataset_name)
-
         sys.exit()
     
     
@@ -51,38 +48,51 @@ def train_model(home_path = '/home/jupyter/',
     elif algorithm == 'Adam':
         
         args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
-        args['RMSprop_epsilon'] = Adam_epsilon
+        args['RMSprop_epsilon'] = damping_value
         args['RMSprop_beta_2'] = 0.9
     elif algorithm == 'KFAC':
         
-        args['algorithm'] = 'kfac-correctFisher-warmStart-lessInverse-no-max-no-LM-momentum-grad'
-        
-        args['kfac_if_svd'] = False
-        print('need to change for CNN')
         
         args['kfac_if_update_BN'] = True
         args['kfac_if_BN_grad_direction'] = True
         
-        args['kfac_cov_update_freq'] = 1
-        args['kfac_inverse_update_freq'] = 20
-        print('need to change for CNN')
-        
-        
         args['kfac_rho'] = 0.9
-        args['kfac_damping_lambda'] = lambda_damping
-    elif algorithm == 'KF-BFGS-CNN':
+        args['kfac_damping_lambda'] = damping_value
         
-        args['algorithm'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad'
-        args['Kron_LBFGS_Hg_initial'] = 1
-        args['Kron_BFGS_A_LM_epsilon'] = np.sqrt(lambda_damping)
-        args['Kron_BFGS_H_epsilon']= np.sqrt(lambda_damping)
-    elif algorithm == 'KF-BFGS(L)-CNN':
         
-        args['algorithm'] = 'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad'
-        args['Kron_LBFGS_Hg_initial'] = 1
-        args['Kron_BFGS_number_s_y'] = 100
-        args['Kron_BFGS_A_LM_epsilon'] = np.sqrt(lambda_damping)
-        args['Kron_BFGS_H_epsilon']= np.sqrt(lambda_damping)
+        
+        if dataset_name in ['FACES', 'MNIST']:
+            
+            args['algorithm'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad'
+            
+            args['kfac_if_svd'] = False
+            
+            args['kfac_cov_update_freq'] = 1
+            args['kfac_inverse_update_freq'] = 20
+            
+        elif dataset_name in ['CIFAR-100', 'CIFAR-10']:
+            
+            args['algorithm'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad-LRdecay'
+
+            args['kfac_if_svd'] = False
+
+            args['kfac_cov_update_freq'] = 10
+            args['kfac_inverse_update_freq'] = 100
+            
+            args['num_epoch_to_decay'] = 40
+            args['lr_decay_rate'] = 0.1
+            print('could change to only compare dataset')
+            
+        else:
+            print('dataset_name')
+            print(dataset_name)
+        
+            sys.exit()
+        
+            
+
+
+            
     else:
         print('algorithm')
         print(algorithm)
