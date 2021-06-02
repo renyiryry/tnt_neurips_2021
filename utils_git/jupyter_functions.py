@@ -9,6 +9,8 @@ def train_model(home_path = '/home/jupyter/',
                 lambda_damping = 0.3,
                 Adam_epsilon = 1e-4,
                 max_cpu_time = 2000):
+    
+    print('change default values')
 
     args = {}
     
@@ -16,7 +18,8 @@ def train_model(home_path = '/home/jupyter/',
     
     args['list_lr'] = [lr]
     
-    args['weight_decay'] = 0
+#     args['weight_decay'] = 0
+    args['weight_decay'] = 1
     print('need to change')
     
     args['momentum_gradient_dampening'] = 0
@@ -24,6 +27,12 @@ def train_model(home_path = '/home/jupyter/',
     
     if dataset_name == 'CIFAR-10':
         args['dataset'] = 'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization'
+    elif dataset_name == 'CIFAR-100':
+        args['dataset'] = 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization'
+    elif dataset_name == 'MNIST':
+        args['dataset'] = 'MNIST-autoencoder-relu-N1-1000-sum-loss-no-regularization'
+    elif dataset_name == 'FACES':
+        args['dataset'] = 'FacesMartens-autoencoder-relu-no-regularization'
     else:
     
     
@@ -34,31 +43,8 @@ def train_model(home_path = '/home/jupyter/',
     
     
     
-#     if dataset_name == 'CIFAR-10' and model_name == 'All-CNN-C':
-        
-#         args['dataset'] = 'CIFAR-10-AllCNNC'
-#     elif dataset_name == 'CIFAR-10' and model_name == 'VGG16':
-        
-#         args['dataset'] = 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
-#     elif dataset_name == 'CIFAR-100' and model_name == 'All-CNN-C':
-        
-#         args['dataset'] = 'CIFAR-100-onTheFly-AllCNNC'
-#     elif dataset_name == 'CIFAR-100' and model_name == 'VGG16':
-        
-#         args['dataset'] = 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
-#     else:
-#         print('dataset_name')
-#         print(dataset_name)
-
-#         print('model_name')
-#         print(model_name)
-
-#         sys.exit()
     
-    
-    
-    
-    
+    print('need to change by if lr decay')
     
     if algorithm == 'SGD-momentum':
         args['algorithm'] = 'SGD-momentum'
@@ -71,8 +57,8 @@ def train_model(home_path = '/home/jupyter/',
         
         args['algorithm'] = 'kfac-correctFisher-warmStart-lessInverse-no-max-no-LM-momentum-grad'
         
-        args['kfac_if_svd'] = True
-        print('need to change for autoencoder')
+        args['kfac_if_svd'] = False
+        print('need to change for CNN')
         
         args['kfac_if_update_BN'] = True
         args['kfac_if_BN_grad_direction'] = True
