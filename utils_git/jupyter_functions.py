@@ -22,8 +22,8 @@ def train_model(home_path = '/home/jupyter/',
     args['weight_decay'] = 1
     print('need to change')
     
-    args['momentum_gradient_dampening'] = 0
-    print('need to change, especially for adam')
+#     args['momentum_gradient_dampening'] = 0
+#     print('need to change, especially for adam')
     
     if dataset_name == 'CIFAR-10':
         args['dataset'] = 'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization'
@@ -45,11 +45,32 @@ def train_model(home_path = '/home/jupyter/',
     
     if algorithm == 'SGD-momentum':
         args['algorithm'] = 'SGD-momentum'
+        
+        args['momentum_gradient_dampening'] = 0
     elif algorithm == 'Adam':
         
-        args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
         args['RMSprop_epsilon'] = damping_value
-        args['RMSprop_beta_2'] = 0.9
+        
+        args['RMSprop_beta_2'] = 0.999
+        
+        args['momentum_gradient_dampening'] = 0.9 # i.e. beta_1
+        
+        if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+            
+            args['algorithm'] = 'Adam-noWarmStart-momentum-grad-LRdecay'
+            
+            args['num_epoch_to_decay'] = 60
+            args['lr_decay_rate'] = 0.1
+            
+        elif dataset_name in ['MNIST', 'FACES']:
+            args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
+        else:
+            
+            print('dataset_name')
+            print(dataset_name)
+            sys.exit()
+            
+            
         
     elif algorithm in ['TNT', 'Shampoo']:
         
@@ -59,6 +80,8 @@ def train_model(home_path = '/home/jupyter/',
         
         args['shampoo_decay'] = 0.9
         args['shampoo_weight'] = 0.1
+        
+        args['momentum_gradient_dampening'] = 0
         
         if dataset_name in ['CIFAR-10', 'CIFAR-100']:
             
@@ -86,7 +109,6 @@ def train_model(home_path = '/home/jupyter/',
         else:
             print('dataset_name')
             print(dataset_name)
-            
             sys.exit()
             
         
@@ -98,6 +120,8 @@ def train_model(home_path = '/home/jupyter/',
         
         args['kfac_rho'] = 0.9
         args['kfac_damping_lambda'] = damping_value
+        
+        args['momentum_gradient_dampening'] = 0
         
         
         
