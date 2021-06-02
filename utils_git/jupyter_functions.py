@@ -50,6 +50,40 @@ def train_model(home_path = '/home/jupyter/',
         args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
         args['RMSprop_epsilon'] = damping_value
         args['RMSprop_beta_2'] = 0.9
+        
+    elif algorithm == 'TNT':
+        
+        args['shampoo_epsilon'] = damping_value
+        
+        args['if_Hessian_action'] = False
+        
+        args['shampoo_decay'] = 0.9
+        args['shampoo_weight'] = 0.1
+        
+        if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+            
+            args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
+            
+            args['shampoo_update_freq'] = 10
+            args['shampoo_inverse_freq'] = 100
+            
+            args['num_epoch_to_decay'] = 40
+            args['lr_decay_rate'] = 0.1
+            
+        elif dataset_name in ['MNIST', 'FACES']:
+            
+            args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+            
+            args['shampoo_update_freq'] = 1
+            args['shampoo_inverse_freq'] = 20
+            
+        else:
+            print('dataset_name')
+            print(dataset_name)
+            
+            sys.exit()
+            
+        
     elif algorithm == 'KFAC':
         
         
