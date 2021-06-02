@@ -51,7 +51,7 @@ def train_model(home_path = '/home/jupyter/',
         args['RMSprop_epsilon'] = damping_value
         args['RMSprop_beta_2'] = 0.9
         
-    elif algorithm == 'TNT':
+    elif algorithm in ['TNT', 'Shampoo']:
         
         args['shampoo_epsilon'] = damping_value
         
@@ -62,7 +62,10 @@ def train_model(home_path = '/home/jupyter/',
         
         if dataset_name in ['CIFAR-10', 'CIFAR-100']:
             
-            args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
+            if algorithm == 'TNT':
+                args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
+            elif algorithm == 'Shampoo':
+                args['algorithm'] = 'shampoo-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
             
             args['shampoo_update_freq'] = 10
             args['shampoo_inverse_freq'] = 100
@@ -72,7 +75,10 @@ def train_model(home_path = '/home/jupyter/',
             
         elif dataset_name in ['MNIST', 'FACES']:
             
-            args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+            if algorithm == 'TNT':
+                args['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+            elif algorithm == 'Shampoo':
+                args['algorithm'] = 'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad'
             
             args['shampoo_update_freq'] = 1
             args['shampoo_inverse_freq'] = 20
