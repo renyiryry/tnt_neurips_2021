@@ -1,5 +1,5 @@
 from utils_git.utils import *
-# from KF_QN_CNN.utils_plot import *
+from utils_git.utils_plot import *
 
 def train_model(home_path = '/home/jupyter/',
                 dataset_name = 'CIFAR-10',
@@ -288,7 +288,7 @@ def train_model(home_path = '/home/jupyter/',
 def plot_results(
     home_path = '/home/jupyter/',
     dataset_name = 'CIFAR-10',
-    model_name = 'VGG16',
+#     model_name = 'VGG16',
     algorithms_jupyter = [],
 ):
     
@@ -303,25 +303,42 @@ def plot_results(
     args['if_gpu'] = True
     # args['if_gpu'] = False
     
-    if dataset_name == 'CIFAR-10' and model_name == 'All-CNN-C':
+#     if dataset_name == 'CIFAR-10' and model_name == 'All-CNN-C':
         
-        name_dataset = 'CIFAR-10-AllCNNC'
-    elif dataset_name == 'CIFAR-10' and model_name == 'VGG16':
+#         name_dataset = 'CIFAR-10-AllCNNC'
+#     elif dataset_name == 'CIFAR-10' and model_name == 'VGG16':
         
-        name_dataset = 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
-    elif dataset_name == 'CIFAR-100' and model_name == 'All-CNN-C':
+#         name_dataset = 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
+#     elif dataset_name == 'CIFAR-100' and model_name == 'All-CNN-C':
         
-        name_dataset = 'CIFAR-100-onTheFly-AllCNNC'
-    elif dataset_name == 'CIFAR-100' and model_name == 'VGG16':
+#         name_dataset = 'CIFAR-100-onTheFly-AllCNNC'
+#     elif dataset_name == 'CIFAR-100' and model_name == 'VGG16':
         
-        name_dataset = 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
+#         name_dataset = 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
+#     else:
+#         print('dataset_name')
+#         print(dataset_name)
+
+#         print('model_name')
+#         print(model_name)
+
+#         sys.exit()
+        
+    if dataset_name == 'CIFAR-10':
+        name_dataset = 'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization'
+#         args['initialization_pkg'] = 'kaiming_normal'
+    elif dataset_name == 'CIFAR-100':
+        name_dataset = 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization'
+#         args['initialization_pkg'] = 'normal'
+    elif dataset_name == 'MNIST':
+        name_dataset = 'MNIST-autoencoder-relu-N1-1000-sum-loss-no-regularization'
+#         args['initialization_pkg'] = 'normal'
+    elif dataset_name == 'FACES':
+        name_dataset = 'FacesMartens-autoencoder-relu-no-regularization'
+#         args['initialization_pkg'] = 'normal'
     else:
         print('dataset_name')
         print(dataset_name)
-
-        print('model_name')
-        print(model_name)
-
         sys.exit()
 
 
@@ -336,29 +353,9 @@ def plot_results(
         
         
         
-        if algorithm_jupyter['name'] == 'KF-BFGS-CNN':
+        print('need to add other algorithm')
             
-            lambda_ = algorithm_jupyter['lambda_damping']
-            algorithm = {}
-            algorithm['name'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad'
-            algorithm['params'] = {}
-            algorithm['params']['Kron_BFGS_A_LM_epsilon'] = np.sqrt(lambda_)
-            algorithm['params']['Kron_BFGS_H_epsilon'] = np.sqrt(lambda_)
-            algorithm['legend'] = algorithm_jupyter['name']
-            algorithms.append(copy.deepcopy(algorithm))
-            
-        elif algorithm_jupyter['name'] == 'KF-BFGS(L)-CNN':
-            
-            lambda_ = algorithm_jupyter['lambda_damping']
-            algorithm = {}
-            algorithm['name'] = 'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad'
-            algorithm['params'] = {}
-            algorithm['params']['Kron_BFGS_A_LM_epsilon'] = np.sqrt(lambda_)
-            algorithm['params']['Kron_BFGS_H_epsilon'] = np.sqrt(lambda_)
-            algorithm['legend'] = algorithm_jupyter['name']
-            algorithms.append(copy.deepcopy(algorithm))
-            
-        elif algorithm_jupyter['name'] == 'KFAC':
+        if algorithm_jupyter['name'] == 'KFAC':
             
             algorithm = {}
             algorithm['name'] = 'kfac-warmStart-lessInverse-no-max-no-LM-momentum-grad'
@@ -386,7 +383,7 @@ def plot_results(
             
             
             
-        elif algorithm_jupyter['name'] == 'SGD-momentum':
+        elif algorithm_jupyter['name'] == 'SGD-m':
             
             algorithm = {}
             algorithm['name'] = 'SGD-momentum'
@@ -459,13 +456,16 @@ def plot_results(
     # args['tuning_criterion'] = 'train_acc'
     # args['tuning_criterion'] = 'train_minibatch_acc'
     args['tuning_criterion'] = 'train_minibatch_loss'
+    print('need to change tuning_criterion')
 
 
     args['list_x'] = ['epoch', 'cpu time']
 
 
-    args['list_y'] = ['training unregularized minibatch loss',
-                  'testing error']
+    print('need to change list y')
+#     args['list_y'] = ['training unregularized minibatch loss',
+#                   'testing error']
+    args['list_y'] = ['training unregularized minibatch loss']
 
 
 
@@ -481,6 +481,7 @@ def plot_results(
 
     # args['if_max_epoch'] = 1
     args['if_max_epoch'] = 0
+    print('need to change if_max_epoch')
 
     args['color'] = None
     
