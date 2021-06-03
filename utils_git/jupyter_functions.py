@@ -284,7 +284,6 @@ def train_model(home_path = '/home/jupyter/',
 def plot_results(
     home_path = '/home/jupyter/',
     dataset_name = 'CIFAR-10',
-#     model_name = 'VGG16',
     algorithms_jupyter = [],
 ):
     
@@ -297,28 +296,6 @@ def plot_results(
     
 
     args['if_gpu'] = True
-    # args['if_gpu'] = False
-    
-#     if dataset_name == 'CIFAR-10' and model_name == 'All-CNN-C':
-        
-#         name_dataset = 'CIFAR-10-AllCNNC'
-#     elif dataset_name == 'CIFAR-10' and model_name == 'VGG16':
-        
-#         name_dataset = 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
-#     elif dataset_name == 'CIFAR-100' and model_name == 'All-CNN-C':
-        
-#         name_dataset = 'CIFAR-100-onTheFly-AllCNNC'
-#     elif dataset_name == 'CIFAR-100' and model_name == 'VGG16':
-        
-#         name_dataset = 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout'
-#     else:
-#         print('dataset_name')
-#         print(dataset_name)
-
-#         print('model_name')
-#         print(model_name)
-
-#         sys.exit()
         
     if dataset_name == 'CIFAR-10':
         name_dataset = 'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization'
@@ -396,7 +373,12 @@ def plot_results(
         elif algorithm_jupyter['name'] == 'SGD-m':
             
             algorithm = {}
-            algorithm['name'] = 'SGD-momentum'
+            
+            if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+                algorithm['name'] = 'SGD-LRdecay-momentum'
+            elif dataset_name in ['MNIST', 'FACES']:
+                algorithm['name'] = 'SGD-momentum'
+                
             algorithm['params'] = {}
             algorithm['legend'] = 'SGD-m'
             algorithms.append(copy.deepcopy(algorithm))
@@ -410,59 +392,50 @@ def plot_results(
 
 
 
+
     
+    
+    if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+        
+        args['tuning_criterion'] = 'test_acc'
+        
+        args['list_y'] = ['training unregularized minibatch loss',
+                  'testing error']
+        
+        args['if_max_epoch'] = 1
+        
+    else:
+        print('dataset_name')
+        print(dataset_name)
+    
+        sys.exit()
 
 
 
 
 
 
+        # args['tuning_criterion'] = 'test_acc'
+        # args['tuning_criterion'] = 'train_loss'
+        # args['tuning_criterion'] = 'train_acc'
+        # args['tuning_criterion'] = 'train_minibatch_acc'
+        args['tuning_criterion'] = 'train_minibatch_loss'
+#         print('need to change tuning_criterion')
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # args['tuning_criterion'] = 'test_acc'
-    # args['tuning_criterion'] = 'train_loss'
-    # args['tuning_criterion'] = 'train_acc'
-    # args['tuning_criterion'] = 'train_minibatch_acc'
-    args['tuning_criterion'] = 'train_minibatch_loss'
-    print('need to change tuning_criterion')
+#         print('need to change list y')
+#     args['list_y'] = ['training unregularized minibatch loss',
+#                   'testing error']
+        args['list_y'] = ['training unregularized minibatch loss']
+    
+        # args['if_max_epoch'] = 1
+        args['if_max_epoch'] = 0
+#         print('need to change if_max_epoch')
 
 
     args['list_x'] = ['epoch', 'cpu time']
 
 
-    print('need to change list y')
-#     args['list_y'] = ['training unregularized minibatch loss',
-#                   'testing error']
-    args['list_y'] = ['training unregularized minibatch loss']
+    
 
 
 
@@ -474,11 +447,8 @@ def plot_results(
     args['if_show_legend'] = True
 
     args['if_test_mode'] = False
-    # args['if_test_mode'] = True
 
-    # args['if_max_epoch'] = 1
-    args['if_max_epoch'] = 0
-    print('need to change if_max_epoch')
+    
 
     args['color'] = None
     
