@@ -4,13 +4,12 @@ from utils_git.utils_plot import *
 def train_model(home_path = '/home/jupyter/',
                 dataset_name = 'CIFAR-10',
                 algorithm = 'TNT',
-                lr = 0.3,
-                damping_value = 1e-8,
+                lr = 1e-4,
+                damping_value = 0.01,
                 weight_decay = 0,
-#                 max_cpu_time = 2000
                ):
     
-    print('change default values')
+#     print('change default values')
 
     args = {}
     
@@ -165,9 +164,6 @@ def train_model(home_path = '/home/jupyter/',
             
             args['shampoo_update_freq'] = 10
             args['shampoo_inverse_freq'] = 100
-            
-#             args['num_epoch_to_decay'] = 40
-#             args['lr_decay_rate'] = 0.1
             
         elif dataset_name in ['MNIST', 'FACES']:
             
@@ -354,8 +350,17 @@ def plot_results(
         
         
         print('need to add other algorithm')
+        
+        if algorithm_jupyter['name'] == 'TNT':
             
-        if algorithm_jupyter['name'] == 'KFAC':
+            algorithm = {}
+            algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+            algorithm['params'] = {}
+            algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            algorithm['legend'] = 'TNT'
+            algorithms.append(copy.deepcopy(algorithm))
+            
+        elif algorithm_jupyter['name'] == 'KFAC':
             
             algorithm = {}
             algorithm['name'] = 'kfac-warmStart-lessInverse-no-max-no-LM-momentum-grad'
@@ -433,19 +438,6 @@ def plot_results(
 
 
 
-
-
-
-
-
-
-
-
-
-
-    
-    
-    
 
 
 
