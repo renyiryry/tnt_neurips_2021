@@ -363,9 +363,9 @@ def plot_results(
         elif algorithm_jupyter['name'] == 'KFAC':
             
             algorithm = {}
-            algorithm['name'] = 'kfac-warmStart-lessInverse-no-max-no-LM-momentum-grad'
+            algorithm['name'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['kfac_damping_lambda'] = algorithm_jupyter['lambda_damping']
+            algorithm['params']['kfac_damping_lambda'] = algorithm_jupyter['damping_value']
             algorithm['legend'] = 'KFAC'
             algorithms.append(copy.deepcopy(algorithm))
             
