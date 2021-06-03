@@ -10654,8 +10654,8 @@ def train(args):
 
         
 
-    print('args')
-    print(args)
+#     print('args')
+#     print(args)
     
     from utils_git.utils_kfac import kfac_update
 #     from utils_git.utils_kbfgs import Kron_BFGS_update_v2

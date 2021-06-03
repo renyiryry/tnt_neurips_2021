@@ -3,12 +3,12 @@ from utils_git.utils import *
 
 def train_model(home_path = '/home/jupyter/',
                 dataset_name = 'CIFAR-10',
-                algorithm = 'KF-BFGS-CNN',
+                algorithm = 'TNT',
                 lr = 0.3,
-#                 lambda_damping = 0.3,
-#                 Adam_epsilon = 1e-4,
                 damping_value = 1e-8,
-                max_cpu_time = 2000):
+                weight_decay = 0,
+#                 max_cpu_time = 2000
+               ):
     
     print('change default values')
 
@@ -18,21 +18,22 @@ def train_model(home_path = '/home/jupyter/',
     
     args['list_lr'] = [lr]
     
-#     args['weight_decay'] = 0
-    args['weight_decay'] = 1
-    print('need to change')
+    args['weight_decay'] = weight_decay
     
-#     args['momentum_gradient_dampening'] = 0
-#     print('need to change, especially for adam')
+
     
     if dataset_name == 'CIFAR-10':
         args['dataset'] = 'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization'
+        args['initialization_pkg'] = 'kaiming_normal'
     elif dataset_name == 'CIFAR-100':
         args['dataset'] = 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization'
+        args['initialization_pkg'] = 'normal'
     elif dataset_name == 'MNIST':
         args['dataset'] = 'MNIST-autoencoder-relu-N1-1000-sum-loss-no-regularization'
+        args['initialization_pkg'] = 'normal'
     elif dataset_name == 'FACES':
         args['dataset'] = 'FacesMartens-autoencoder-relu-no-regularization'
+        args['initialization_pkg'] = 'normal'
     else:
         print('dataset_name')
         print(dataset_name)
@@ -41,7 +42,68 @@ def train_model(home_path = '/home/jupyter/',
     
     
     
-    print('need to change by if lr decay')
+#     print('need to change by if lr decay')
+
+
+
+    
+    if dataset_name in ['MNIST']:
+        
+        # args['if_max_epoch'] = 1 # 0 means max_time
+        args['if_max_epoch'] = 0 # 0 means max_time
+    
+    
+    
+        args['max_epoch/time'] = 500
+        
+    elif dataset_name in ['FACES']:
+        
+        # args['if_max_epoch'] = 1 # 0 means max_time
+        args['if_max_epoch'] = 0 # 0 means max_time
+    
+    
+    
+        args['max_epoch/time'] = 2000
+        
+    elif dataset_name in ['CIFAR-10', 'CIFAR-100']:
+        
+        
+        
+        if algorithm in ['SGD-m', 'Adam']:
+            
+            args['if_max_epoch'] = 1 # 0 means max_time
+#             args['if_max_epoch'] = 0 # 0 means max_time
+    
+    
+    
+            args['max_epoch/time'] = 200
+            
+            args['num_epoch_to_decay'] = 60
+            args['lr_decay_rate'] = 0.1
+            
+        elif algorithm in ['TNT', 'Shampoo', 'KFAC']:
+            
+            args['if_max_epoch'] = 1 # 0 means max_time
+#             args['if_max_epoch'] = 0 # 0 means max_time
+    
+    
+    
+            args['max_epoch/time'] = 100
+            
+            args['num_epoch_to_decay'] = 40
+            args['lr_decay_rate'] = 0.1
+            
+        else:
+            print('algorithm')
+            print(algorithm)
+        
+            sys.exit()
+        
+    else:
+        print('dataset_name')
+        print(dataset_name)
+    
+        sys.exit()
     
     if algorithm == 'SGD-m':
         
@@ -51,9 +113,6 @@ def train_model(home_path = '/home/jupyter/',
             args['algorithm'] = 'SGD-momentum'
         elif dataset_name in ['CIFAR-10', 'CIFAR-100']:
             args['algorithm'] = 'SGD-LRdecay-momentum'
-            
-            args['num_epoch_to_decay'] = 60
-            args['lr_decay_rate'] = 0.1
         else:
             print('dataset_name')
             print(dataset_name)
@@ -74,8 +133,8 @@ def train_model(home_path = '/home/jupyter/',
             
             args['algorithm'] = 'Adam-noWarmStart-momentum-grad-LRdecay'
             
-            args['num_epoch_to_decay'] = 60
-            args['lr_decay_rate'] = 0.1
+#             args['num_epoch_to_decay'] = 60
+#             args['lr_decay_rate'] = 0.1
             
         elif dataset_name in ['MNIST', 'FACES']:
             args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
@@ -107,8 +166,8 @@ def train_model(home_path = '/home/jupyter/',
             args['shampoo_update_freq'] = 10
             args['shampoo_inverse_freq'] = 100
             
-            args['num_epoch_to_decay'] = 40
-            args['lr_decay_rate'] = 0.1
+#             args['num_epoch_to_decay'] = 40
+#             args['lr_decay_rate'] = 0.1
             
         elif dataset_name in ['MNIST', 'FACES']:
             
@@ -157,9 +216,9 @@ def train_model(home_path = '/home/jupyter/',
             args['kfac_cov_update_freq'] = 10
             args['kfac_inverse_update_freq'] = 100
             
-            args['num_epoch_to_decay'] = 40
-            args['lr_decay_rate'] = 0.1
-            print('could change to only compare dataset')
+#             args['num_epoch_to_decay'] = 40
+#             args['lr_decay_rate'] = 0.1
+#             print('could change to only compare dataset')
             
         else:
             print('dataset_name')
@@ -182,12 +241,9 @@ def train_model(home_path = '/home/jupyter/',
     
     
 
-    # args['if_max_epoch'] = 1 # 0 means max_time
-    args['if_max_epoch'] = 0 # 0 means max_time
+
     
     
-    
-    args['max_epoch/time'] = max_cpu_time
     args['record_epoch'] = 1
 
     args['seed_number'] = 9999
@@ -196,7 +252,8 @@ def train_model(home_path = '/home/jupyter/',
 
     # args['initialization_pkg'] = 'numpy'
     # args['initialization_pkg'] = 'default'
-    args['initialization_pkg'] = 'normal'
+#     args['initialization_pkg'] = 'normal'
+#     print('need to change pkg')
     
     
     
