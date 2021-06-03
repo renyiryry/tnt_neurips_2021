@@ -369,12 +369,17 @@ def plot_results(
             algorithm['legend'] = 'KFAC'
             algorithms.append(copy.deepcopy(algorithm))
             
+            
+        elif algorithm_jupyter['name'] == 'Shampoo':
+            
+            algorithm = {}
+            algorithm['name'] = 'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad'
+            algorithm['params'] = {}
+            algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            algorithm['legend'] = 'Shampoo'
+            algorithms.append(copy.deepcopy(algorithm))
+            
         elif algorithm_jupyter['name'] == 'Adam':
-            
-#             print('algorithm_jupyter')
-#             print(algorithm_jupyter)
-            
-#             sys.exit()
             
             
             algorithm = {}
