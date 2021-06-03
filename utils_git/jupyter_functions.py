@@ -385,10 +385,10 @@ def plot_results(
             algorithm = {}
             algorithm['name'] = 'Adam-noWarmStart-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['RMSprop_epsilon'] = algorithm_jupyter['Adam_epsilon']
-            algorithm['legend'] = 'Adam' +\
-            r', $\epsilon$=' +\
-            str(algorithm['params']['RMSprop_epsilon'])
+            algorithm['params']['RMSprop_epsilon'] = algorithm_jupyter['damping_value']
+            algorithm['legend'] = 'Adam'
+#             r', $\epsilon$=' +\
+#             str(algorithm['params']['RMSprop_epsilon'])
             algorithms.append(copy.deepcopy(algorithm))
             
             
