@@ -132,9 +132,6 @@ def train_model(home_path = '/home/jupyter/',
             
             args['algorithm'] = 'Adam-noWarmStart-momentum-grad-LRdecay'
             
-#             args['num_epoch_to_decay'] = 60
-#             args['lr_decay_rate'] = 0.1
-            
         elif dataset_name in ['MNIST', 'FACES']:
             args['algorithm'] = 'Adam-noWarmStart-momentum-grad'
         else:
@@ -352,9 +349,18 @@ def plot_results(
         elif algorithm_jupyter['name'] == 'KFAC':
             
             algorithm = {}
-            algorithm['name'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['kfac_damping_lambda'] = algorithm_jupyter['damping_value']
+            
+            if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+                algorithm['name'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad-LRdecay'
+                algorithm['params']['weight_decay'] = algorithm_jupyter['weight_decay']
+            elif dataset_name in ['MNIST', 'FACES']:
+#                 algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+#                 algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+                algorithm['name'] = 'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad'
+                algorithm['params']['kfac_damping_lambda'] = algorithm_jupyter['damping_value']
+            
             algorithm['legend'] = 'KFAC'
             algorithms.append(copy.deepcopy(algorithm))
             
@@ -362,9 +368,19 @@ def plot_results(
         elif algorithm_jupyter['name'] == 'Shampoo':
             
             algorithm = {}
-            algorithm['name'] = 'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+            if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+                algorithm['name'] = 'shampoo-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
+                algorithm['params']['weight_decay'] = algorithm_jupyter['weight_decay']
+            elif dataset_name in ['MNIST', 'FACES']:
+#                 algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+#                 algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+                algorithm['name'] = 'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad'
+            
+                algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+                
             algorithm['legend'] = 'Shampoo'
             algorithms.append(copy.deepcopy(algorithm))
             
@@ -372,12 +388,21 @@ def plot_results(
             
             
             algorithm = {}
-            algorithm['name'] = 'Adam-noWarmStart-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['RMSprop_epsilon'] = algorithm_jupyter['damping_value']
+            
+            if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+                algorithm['name'] = 'Adam-noWarmStart-momentum-grad-LRdecay'
+                algorithm['params']['weight_decay'] = algorithm_jupyter['weight_decay']
+            elif dataset_name in ['MNIST', 'FACES']:
+#                 algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+#                 algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+                algorithm['name'] = 'Adam-noWarmStart-momentum-grad'
+            
+                algorithm['params']['RMSprop_epsilon'] = algorithm_jupyter['damping_value']
+                
             algorithm['legend'] = 'Adam'
-#             r', $\epsilon$=' +\
-#             str(algorithm['params']['RMSprop_epsilon'])
+
             algorithms.append(copy.deepcopy(algorithm))
             
             
