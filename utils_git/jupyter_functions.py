@@ -330,10 +330,22 @@ def plot_results(
         
         if algorithm_jupyter['name'] == 'TNT':
             
+            
+            
             algorithm = {}
-            algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
             algorithm['params'] = {}
-            algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+            if dataset_name in ['CIFAR-10', 'CIFAR-100']:
+                algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay'
+                algorithm['params']['weight_decay'] = algorithm_jupyter['weight_decay']
+            elif dataset_name in ['MNIST', 'FACES']:
+                algorithm['name'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad'
+                algorithm['params']['shampoo_epsilon'] = algorithm_jupyter['damping_value']
+            
+            
+            
+            
+            
             algorithm['legend'] = 'TNT'
             algorithms.append(copy.deepcopy(algorithm))
             
@@ -373,13 +385,15 @@ def plot_results(
         elif algorithm_jupyter['name'] == 'SGD-m':
             
             algorithm = {}
+            algorithm['params'] = {}
             
             if dataset_name in ['CIFAR-10', 'CIFAR-100']:
                 algorithm['name'] = 'SGD-LRdecay-momentum'
+                algorithm['params']['weight_decay'] = algorithm_jupyter['weight_decay']
             elif dataset_name in ['MNIST', 'FACES']:
                 algorithm['name'] = 'SGD-momentum'
                 
-            algorithm['params'] = {}
+            
             algorithm['legend'] = 'SGD-m'
             algorithms.append(copy.deepcopy(algorithm))
             
