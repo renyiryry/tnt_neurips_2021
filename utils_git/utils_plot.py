@@ -693,20 +693,6 @@ def plot_hyperparams_vs_loss_v2(args):
         x += [x_t[0]]
         y += [x_t[1]]
         z += [x_t[2]]
-    
-#     print('args')
-#     print(args)
-    
-#     print('args[dataset]')
-#     print(args['dataset'])
-
-#     print('y')
-#     print(y)
-    
-#     print('y**2')
-#     print(y**2)
-    
-#     sys.exit()
 
     step = 5
     
@@ -1150,8 +1136,8 @@ def get_subplot(ax, name_dataset, name_dataset_legend, algorithms, x_axis_name, 
     
     from utils_git.utils import get_name_algorithm
     
-    print('args')
-    print(args)
+#     print('args')
+#     print(args)
 
     plt.rcParams['xtick.labelsize']=20
     plt.rcParams['ytick.labelsize']=20
@@ -1478,8 +1464,8 @@ def get_plot(name_dataset, name_dataset_legend, algorithms, args):
     
     from utils_git.utils import from_dataset_to_N1_N2
     
-    print('args')
-    print(args)
+#     print('args')
+#     print(args)
     
     args['dataset'] = name_dataset
     args = from_dataset_to_N1_N2(args)

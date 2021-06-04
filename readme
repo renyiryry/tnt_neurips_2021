@@ -1,4 +1,4 @@
-# KF_QN_CNN_ICML2021
+# TNT
 
 ## Specification of dependencies
 
@@ -17,10 +17,4 @@ psutil 5.6.7
 ## How to get results
 
 See Demo.ipynb for results and command to produce the results.
-
-### To tune the hyper-paramters:
-
-For KF-BFGS-CNN, KF-BFGS(L)-CNN, and KFAC, change the arguments "lr" and "lambda_damping" in train_model();
-For Adam, change the arguments "lr" and "Adam_epsilon";
-For SGD-momentum, change the arguments "lr".
 
