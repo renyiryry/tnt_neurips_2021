@@ -323,7 +323,7 @@ def plot_results(
         
         
         
-        print('need to add other algorithm')
+#         print('need to add other algorithm')
         
         if algorithm_jupyter['name'] == 'TNT':
             
@@ -443,6 +443,22 @@ def plot_results(
         
         args['if_max_epoch'] = 1
         
+    elif dataset_name in ['MNIST', 'FACES']:
+        
+        # args['tuning_criterion'] = 'test_acc'
+        # args['tuning_criterion'] = 'train_loss'
+        # args['tuning_criterion'] = 'train_acc'
+        # args['tuning_criterion'] = 'train_minibatch_acc'
+        args['tuning_criterion'] = 'train_minibatch_loss'
+
+
+#     args['list_y'] = ['training unregularized minibatch loss',
+#                   'testing error']
+        args['list_y'] = ['training unregularized minibatch loss']
+    
+        # args['if_max_epoch'] = 1
+        args['if_max_epoch'] = 0
+        
     else:
         print('dataset_name')
         print(dataset_name)
@@ -454,21 +470,7 @@ def plot_results(
 
 
 
-        # args['tuning_criterion'] = 'test_acc'
-        # args['tuning_criterion'] = 'train_loss'
-        # args['tuning_criterion'] = 'train_acc'
-        # args['tuning_criterion'] = 'train_minibatch_acc'
-        args['tuning_criterion'] = 'train_minibatch_loss'
-#         print('need to change tuning_criterion')
 
-#         print('need to change list y')
-#     args['list_y'] = ['training unregularized minibatch loss',
-#                   'testing error']
-        args['list_y'] = ['training unregularized minibatch loss']
-    
-        # args['if_max_epoch'] = 1
-        args['if_max_epoch'] = 0
-#         print('need to change if_max_epoch')
 
 
     args['list_x'] = ['epoch', 'cpu time']
