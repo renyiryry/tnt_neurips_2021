@@ -8,8 +8,6 @@ def train_model(home_path = '/home/jupyter/',
                 damping_value = 0.01,
                 weight_decay = 0,
                ):
-    
-#     print('change default values')
 
     args = {}
     
