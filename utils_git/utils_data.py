@@ -57,7 +57,8 @@ def load_downScaledMNIST(batch_size, test_batch_size, train_dir):
     
     return train_loader, test_loader
 
-def load_cifar100(name_dataset, batch_size = 128, test_batch_size = 1000):
+# def load_cifar100(name_dataset, batch_size = 128, test_batch_size = 1000):
+def load_cifar100(name_dataset, home_path, batch_size, test_batch_size):
     
     print('==> Preparing data..')
     
@@ -102,17 +103,18 @@ def load_cifar100(name_dataset, batch_size = 128, test_batch_size = 1000):
     ])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='../data/' + name_dataset + '_data', train=True, transform=transform_train, download=True),
+        datasets.CIFAR100(root=home_path + 'data/' + name_dataset + '_data', train=True, transform=transform_train, download=True),
         batch_size=batch_size, shuffle=True,
         num_workers=4, pin_memory=True, drop_last=True)
 
     test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='../data/' + name_dataset + '_data', train=False, transform=transform_test,download=True),
+        datasets.CIFAR100(root=home_path + 'data/' + name_dataset + '_data', train=False, transform=transform_test,download=True),
         batch_size=test_batch_size, shuffle=False, num_workers=0, pin_memory=True)
     
     return train_loader, test_loader
 
-def load_cifar(name_dataset, batch_size = 512, test_batch_size = 1000):
+# def load_cifar(name_dataset, batch_size = 512, test_batch_size = 1000):
+def load_cifar(name_dataset, home_path, batch_size, test_batch_size):
     
     print('==> Preparing data..')
 
@@ -181,12 +183,12 @@ def load_cifar(name_dataset, batch_size = 512, test_batch_size = 1000):
     ])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='../data/' + name_dataset + '_data', train=True, transform=transform_train, download=True),
+        datasets.CIFAR10(root=home_path + 'data/' + name_dataset + '_data', train=True, transform=transform_train, download=True),
         batch_size=batch_size, shuffle=True,
         num_workers=4, pin_memory=True, drop_last=True)
 
     test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='../data/' + name_dataset + '_data', train=False, transform=transform_test,download=True),
+        datasets.CIFAR10(root=home_path + 'data/' + name_dataset + '_data', train=False, transform=transform_test,download=True),
         batch_size=test_batch_size, shuffle=False, num_workers=0, pin_memory=True)
     
     return train_loader, test_loader
@@ -376,8 +378,6 @@ class DataSet(object):
 
 def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot=False):
     
-#     print('need to mv')
-    
     if name_dataset in ['MNIST-N1-1000',
                         'MNIST-no-regularization',
                         'MNIST-one-layer']:
@@ -473,7 +473,9 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
         data_sets.test = DataSet([], [], fake_data=True)
         return data_sets
     
-    train_dir = '../data/' + name_dataset + '_data'
+#     train_dir = '../data/' + name_dataset + '_data'
+    
+    train_dir = home_path + 'data/' + name_dataset + '_data'
     
     VALIDATION_SIZE = 0
     
@@ -775,14 +777,8 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
                 
             
         else:
-            
-#             print('train_dir')
-#             print(train_dir)
-#             sys.exit()
         
             train_, test_ = load_downScaledMNIST(batch_size=60000, test_batch_size=10000, train_dir=train_dir)
-#             elif name_dataset == 'CIFAR-100':
-#                 train_, test_ = load_cifar100(batch_size=50000, test_batch_size=10000)
 
             
 
@@ -868,18 +864,16 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
             
         
             if name_dataset == 'CIFAR':
-                train_, test_ = load_cifar(name_dataset, batch_size=50000, test_batch_size=10000)
+                train_, test_ = load_cifar(name_dataset, home_path, batch_size=50000, test_batch_size=10000)
                 
                 
             elif name_dataset == 'CIFAR-10-NoAugmentation-vgg11':
                 
-                train_, test_ = load_cifar(name_dataset, batch_size=50000, test_batch_size=10000)
+                train_, test_ = load_cifar(name_dataset, home_path, batch_size=50000, test_batch_size=10000)
             elif name_dataset in ['CIFAR-100',
                                   'CIFAR-100-NoAugmentation']:
         
-#                 from utils_git.utils import load_cifar100
-        
-                train_, test_ = load_cifar100(name_dataset, batch_size=50000, test_batch_size=10000)
+                train_, test_ = load_cifar100(name_dataset, home_path, batch_size=50000, test_batch_size=10000)
 
             train_ = next(iter(train_))
             test_ = next(iter(test_))
@@ -975,31 +969,6 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
                 
             test_images = dict_[b'data']
             test_labels = dict_[b'fine_labels']
-                
-        
-        print('train_images.shape')
-        print(train_images.shape)
-        
-        test_red_train_images = train_images[:, :1024] / 255.0
-        test_green_train_images = train_images[:, 1024:2048] / 255.0
-        test_blue_train_images = train_images[:, 2048:] / 255.0
-        
-        print('np.mean(test_red_train_images)')
-        print(np.mean(test_red_train_images))
-        print('np.mean(test_green_train_images)')
-        print(np.mean(test_green_train_images))
-        print('np.mean(test_blue_train_images)')
-        print(np.mean(test_blue_train_images))
-        
-        print('np.std(test_red_train_images)')
-        print(np.mean(np.std(test_red_train_images, axis=1, ddof=1)))
-        print('np.std(test_green_train_images)')
-        print(np.mean(np.std(test_green_train_images, axis=1, ddof=1)))
-        print('np.std(test_blue_train_images)')
-        print(np.mean(np.std(test_blue_train_images, axis=1, ddof=1)))
-        
-            
-        sys.exit()
             
         
         train_images = train_images[:, :, np.newaxis, np.newaxis]
@@ -1015,8 +984,10 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
         if_autoencoder = False
         
         
-        if os.path.isfile('../data/webspam_data/webspam_data_np.pkl'):
-            with open('../data/webspam_data/webspam_data_np.pkl', 'rb') as filename_pkl:
+#         if os.path.isfile('../data/webspam_data' + '/webspam_data_np.pkl'):
+        if os.path.isfile(train_dir + '/webspam_data_np.pkl'):
+#             with open('../data/webspam_data' + '/webspam_data_np.pkl', 'rb') as filename_pkl:
+            with open(train_dir + '/webspam_data_np.pkl', 'rb') as filename_pkl:
                 webspam_data_np = pickle.load(filename_pkl)
                 x = webspam_data_np['x']
                 lines_y = webspam_data_np['lines_y']
@@ -1041,11 +1012,13 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
 
 
 
-            with open('../data/webspam_data/output.bin', "r") as file:
+#             with open('../data/webspam_data' + '/output.bin', "r") as file:
+            with open(train_dir + '/output.bin', "r") as file:
 
                 lines = file.readlines()
                 
-            os.remove('../data/webspam_data/output.bin')
+#             os.remove('../data/webspam_data' + '/output.bin')
+            os.remove(train_dir + '/output.bin')
 
             lines_1 = [line.split() for line in lines]
 
@@ -1085,7 +1058,8 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
             webspam_data_np = {}
             webspam_data_np['x'] = x
             webspam_data_np['lines_y'] = lines_y
-            with open('../data/webspam_data/webspam_data_np.pkl', 'wb') as filename_pkl:
+#             with open('../data/webspam_data' + '/webspam_data_np.pkl', 'wb') as filename_pkl:
+            with open(train_dir + '/webspam_data_np.pkl', 'wb') as filename_pkl:
                 pickle.dump(webspam_data_np, filename_pkl)
         
         train_images = x[:300000]
@@ -1172,13 +1146,6 @@ def read_data_sets(name_dataset, name_model, home_path, fake_data=False, one_hot
 
 #         [~, N_test] = size(intest);
         test_images = test_images / std_train[None, :]
-        
-#         print('np.std(train_images, axis=0)')
-#         print(np.std(train_images, axis=0))
-        
-        
-        # print('np.max(np.std(train_images, axis=0))')
-        # print(np.max(np.std(train_images, axis=0)))
         
         train_images = train_images[:, :, np.newaxis, np.newaxis]
         test_images = test_images[:, :, np.newaxis, np.newaxis]
@@ -1339,7 +1306,7 @@ def read_data_sets_v2(name_dataset, params):
                         'CIFAR-10-N1-128-AllCNNC',
                         'CIFAR-10-N1-512-AllCNNC']:
     
-        train_loader, test_loader = load_cifar(name_dataset, N1, N1)
+        train_loader, test_loader = load_cifar(name_dataset, params['home_path'], N1, N1)
     elif name_dataset in ['CIFAR-100-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias',
                           'CIFAR-100-onTheFly-ResNet34-BNNoAffine',
                           'CIFAR-100-onTheFly-ResNet34-BN',
@@ -1356,7 +1323,7 @@ def read_data_sets_v2(name_dataset, params):
                           'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
                           'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                           'CIFAR-100-onTheFly-AllCNNC']:
-        train_loader, test_loader = load_cifar100(name_dataset, N1, N1)
+        train_loader, test_loader = load_cifar100(name_dataset, params['home_path'], N1, N1)
     else:
         print('error: need to check for ' + name_dataset)
         sys.exit()
@@ -1368,3 +1335,4 @@ def read_data_sets_v2(name_dataset, params):
     dataset.test_generator = test_loader
     
     return dataset
+
