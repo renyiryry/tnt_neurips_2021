@@ -12630,7 +12630,10 @@ def train(args):
 
     if old_pkl_name != None:
         print('Remove old result:')
-        print(path_to_goolge_drive_dir + name_result + old_pkl_name)
+        
+#         print(path_to_goolge_drive_dir + name_result + old_pkl_name)
+        print(name_result + old_pkl_name)
+    
         os.remove(path_to_goolge_drive_dir + name_result + old_pkl_name)
 
     import datetime        
@@ -12651,7 +12654,8 @@ def train(args):
         pickle.dump(dict_result, output_result)
 
 
-    print('Saved at ' + path_to_goolge_drive_dir + name_result + filename_result_with_time)
+#     print('Saved at ' + path_to_goolge_drive_dir + name_result + filename_result_with_time)
+    print('Saved at ' + name_result + filename_result_with_time)
 
     return name_result, data_, dict_result['params']
 
