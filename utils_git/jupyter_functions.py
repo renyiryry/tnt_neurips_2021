@@ -145,6 +145,8 @@ def train_model(home_path = '/home/jupyter/',
         
         if algorithm in ['Shampoo']:
             args['shampoo_if_coupled_newton'] = True
+        elif algorithm in ['TNT']:
+            args['shampoo_if_coupled_newton'] = False
         
         args['shampoo_epsilon'] = damping_value
         
