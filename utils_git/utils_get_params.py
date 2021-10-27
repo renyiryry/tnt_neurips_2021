@@ -76,6 +76,10 @@ def get_params(params, args):
         params['if_lr_decay'] = True
         params['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse-momentum-grad'
         
+    elif algorithm == 'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay':
+        params['if_lr_decay'] = True
+        params['algorithm'] = 'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad'
+        
     elif algorithm in ['SGD-momentum',
                        'Adam-noWarmStart-momentum-grad',
                        'Fisher-BD',
@@ -86,7 +90,10 @@ def get_params(params, args):
                        'kfac-correctFisher-warmStart-no-max-no-LM-momentum-grad',
                        'kfac-correctFisher-warmStart-lessInverse-no-max-no-LM-momentum-grad',
                        'kfac-correctFisher-warmStart-lessInverse-NoMaxNoSqrt-no-LM-momentum-grad',
+                       'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping-regularized-grad-momentum-grad',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt-regularized-grad-momentum-grad',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT-regularized-grad-momentum-grad',
                        'shampoo-allVariables-warmStart-momentum-grad',
                        'shampoo-allVariables-warmStart-lessInverse-momentum-grad',
                        'shampoo-allVariables-filterFlattening-warmStart-momentum-grad',
@@ -104,7 +111,8 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping-momentum-grad',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-momentum-grad',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-momentum-grad',
-                       'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse-momentum-grad',]:
+                       'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse-momentum-grad',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad',]:
         params['if_lr_decay'] = False
     else:
         print('algorithm')
@@ -236,6 +244,10 @@ def get_params(params, args):
     elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2-regularized-grad-momentum-grad':
         params['if_momentum_gradient'] = True
         params['algorithm'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2-regularized-grad'
+        
+    elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt-regularized-grad-momentum-grad':
+        params['if_momentum_gradient'] = True
+        params['algorithm'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt-regularized-grad'
         
     elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT-regularized-grad-momentum-grad':
         params['if_momentum_gradient'] = True
@@ -565,6 +577,10 @@ def get_params(params, args):
         params['if_momentum_gradient'] = True
         params['algorithm'] = 'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart'
         
+    elif algorithm == 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping-momentum-grad':
+        params['if_momentum_gradient'] = True
+        params['algorithm'] = 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping'
+        
     elif algorithm == 'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad':
         params['if_momentum_gradient'] = True
         params['algorithm'] = 'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse'
@@ -609,9 +625,9 @@ def get_params(params, args):
         params['if_momentum_gradient'] = True
         params['algorithm'] = 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse'
         
-    elif algorithm == 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping-momentum-grad':
+    elif algorithm == 'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad':
         params['if_momentum_gradient'] = True
-        params['algorithm'] = 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping'
+        params['algorithm'] = 'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart'
         
     else:   
         if algorithm in ['SGD',
@@ -776,6 +792,10 @@ def get_params(params, args):
     elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2-regularized-grad':
         params['if_regularized_grad'] = True
         params['algorithm'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2'
+        
+    elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt-regularized-grad':
+        params['if_regularized_grad'] = True
+        params['algorithm'] = 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt'
         
     elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT-regularized-grad':
         params['if_regularized_grad'] = True
@@ -967,6 +987,7 @@ def get_params(params, args):
                            'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                            'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                            'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                           'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                            'BFGS',
                            'BFGS-homo',
                            'Fisher-BD',
@@ -1030,6 +1051,7 @@ def get_params(params, args):
                        'matrix-normal-same-trace-allVariables-warmStart-MaxEigDamping',
                        'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
+                       'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
                        'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
@@ -1041,6 +1063,7 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
                        'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
@@ -1051,6 +1074,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1087,6 +1111,7 @@ def get_params(params, args):
                      'shampoo-allVariables-filterFlattening-warmStart',
                      'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
                      'shampoo-no-sqrt',
+                     'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                      'RMSprop',
                      'RMSprop-warmStart',
                      'Adam',
@@ -1146,6 +1171,7 @@ def get_params(params, args):
                        'matrix-normal-same-trace-allVariables-warmStart-MaxEigDamping',
                        'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
+                       'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
                        'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
@@ -1157,7 +1183,6 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
-                       'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'SMW-Fisher-momentum-D_t-momentum',
                        'GI-Fisher',
                        'SMW-GN',
@@ -1191,6 +1216,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1321,6 +1347,7 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'RMSprop',
                        'RMSprop-warmStart',
@@ -1363,6 +1390,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1468,6 +1496,7 @@ def get_params(params, args):
                        'shampoo-allVariables-filterFlattening-warmStart',
                        'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
                        'shampoo-no-sqrt',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                        'RMSprop-individual-grad-no-sqrt-Fisher',
                        'RMSprop-individual-grad-no-sqrt',
                        'RMSprop-individual-grad',
@@ -1522,6 +1551,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1651,6 +1681,7 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'SGD-momentum-yura',
                        'SGD-momentum',
@@ -1693,6 +1724,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1786,6 +1818,7 @@ def get_params(params, args):
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                        'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                        'ekfac-EF-VA',
                        'ekfac-EF',
@@ -1835,6 +1868,7 @@ def get_params(params, args):
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
                        'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
@@ -1977,6 +2011,7 @@ def get_params(params, args):
     params['keys_params_saved'].append('if_max_epoch')
     params['keys_params_saved'].append('max_epoch/time')
     
+    params['keys_params_saved'].append('momentum_gradient_rho')
     params['keys_params_saved'].append('momentum_gradient_dampening')
     
     params['keys_params_saved'].append('if_grafting')
@@ -2011,10 +2046,10 @@ def get_params(params, args):
         
 
         
-#     import utils_git.utils_kbfgs as utils_kbfgs
+    import utils_git.utils_kbfgs as utils_kbfgs
     
-#     if params['algorithm'] in utils_kbfgs.list_algorithm:
-#         params = utils_kbfgs.get_saved_params_kbfgs(params)
+    if params['algorithm'] in utils_kbfgs.list_algorithm:
+        params = utils_kbfgs.get_saved_params_kbfgs(params, args)
     
     
     
@@ -2064,6 +2099,7 @@ def get_params(params, args):
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                               'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                                'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping']:
         
         params['keys_params_saved'].append('shampoo_inverse_freq')
@@ -2073,6 +2109,8 @@ def get_params(params, args):
         params['keys_params_saved'].append('shampoo_weight')
         
         params['keys_params_saved'].append('if_Hessian_action')
+        
+        params['keys_params_saved'].append('shampoo_if_coupled_newton')
     
 
     if params['algorithm'] in ['shampoo',
@@ -2094,6 +2132,7 @@ def get_params(params, args):
                                'matrix-normal-same-trace-allVariables-warmStart',
                                'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
                                'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
+                               'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping',
                                'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
                                'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
                                'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
@@ -2105,7 +2144,7 @@ def get_params(params, args):
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
-                               'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping']:
+                               'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
         params['keys_params_saved'].append('shampoo_epsilon')
         
         
