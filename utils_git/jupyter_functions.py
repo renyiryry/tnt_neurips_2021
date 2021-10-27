@@ -101,6 +101,8 @@ def train_model(home_path = '/home/jupyter/',
         print(dataset_name)
     
         sys.exit()
+        
+    args['momentum_gradient_rho'] = 0.9
     
     if algorithm == 'SGD-m':
         
@@ -140,6 +142,9 @@ def train_model(home_path = '/home/jupyter/',
             
         
     elif algorithm in ['TNT', 'Shampoo']:
+        
+        if algorithm in ['Shampoo']:
+            args['shampoo_if_coupled_newton'] = True
         
         args['shampoo_epsilon'] = damping_value
         
