@@ -40,6 +40,185 @@ from utils_git.utils_get_params import get_params
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
+list_lr_complete = [
+    1e-10, 3e-10, 1e-9, 3e-9, 1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000
+]
+
+def tune_lr_and_wd(args):
+    
+    logs = []
+    
+    for i, wd in enumerate(args['list_wd']):
+        args['weight_decay'] = wd
+    
+    
+        if i == 0:
+            args['list_lr'] = args['list_lr_for_first_wd']
+        else:
+            
+#             print('tune_lr_output')
+#             print(tune_lr_output)
+            
+            assert wd > args['list_wd'][i-1]
+            
+            # wd goes up -> lr goes down
+            
+            best_lr_prev = tune_lr_output['best_lr']
+            
+            args['list_lr'] = [
+                list_lr_complete[list_lr_complete.index(best_lr_prev) - 1],
+                best_lr_prev
+            ]
+        
+        tune_lr_output = tune_lr(args)
+        
+        logs.append(tune_lr_output)
+        
+        
+
+        data_ = None
+        torch.cuda.empty_cache()
+
+
+    print('\n')
+    for wd, log_wd in zip(args['list_wd'], logs):
+        
+        print('wd, list_lr_tried, best_lr')
+        print(wd, log_wd['list_lr_tried'], log_wd['best_lr'])
+
+def coupled_newton(mat_g, p, ridge_epsilon, device, if_damped_already):
+    # revised from 
+    # https://github.com/google-research/google-research/blob/master/scalable_shampoo/jax/shampoo.py#L340
+    
+    # if_damped_already == True: mat_g is already damped, ridge_epsilon is dummy
+    
+    iter_count=100
+    error_tolerance=1e-6
+    
+    def coupled_newton_while_loop(cond_fun, body_fun, init_val):
+        val = init_val
+        while cond_fun(val):
+            val = body_fun(val)
+        return val
+    
+    def coupled_newton_iter_condition(state):
+        (i, unused_mat_m, unused_mat_h, unused_old_mat_h, error,
+         run_step) = state
+        
+#         error_above_threshold = jnp.logical_and(
+#             error > error_tolerance, run_step)
+        error_above_threshold = ((error > error_tolerance) and run_step)
+        
+#         sys.exit()
+        
+#         return jnp.logical_and(i < iter_count, error_above_threshold)
+        return (i < iter_count) and error_above_threshold
+    
+    def coupled_newton_iter_body(state):
+        (i, mat_m, mat_h, unused_old_mat_h, error, unused_run_step) = state
+        mat_m_i = (1 - alpha) * identity + alpha * mat_m
+        
+        # slight different from jax code
+        if int(p) == 1:
+            new_mat_m = torch.matmul(mat_m_i, mat_m)
+        elif int(p) == 2:
+            mat_pow_2 = torch.matmul(mat_m_i, mat_m_i)
+            new_mat_m = torch.matmul(
+                mat_pow_2, mat_m,
+            )
+        elif int(p) == 4:
+            mat_pow_2 = torch.matmul(mat_m_i, mat_m_i)
+            mat_pow_4 = torch.matmul(mat_pow_2, mat_pow_2)
+            new_mat_m = torch.matmul(
+                mat_pow_4, mat_m,
+            )
+        elif int(p) == 6:
+            mat_pow_2 = torch.matmul(mat_m_i, mat_m_i)
+            mat_pow_4 = torch.matmul(mat_pow_2, mat_pow_2)
+            mat_pow_6 = torch.matmul(mat_pow_2, mat_pow_4)
+            new_mat_m = torch.matmul(
+                mat_pow_6, mat_m,
+            )
+        else:
+            print('p')
+            print(p)
+            sys.exit()
+        
+#         new_mat_m = jnp.matmul(
+#             mat_power(mat_m_i, p), mat_m, precision=_INVERSE_PTH_ROOT_PRECISION)
+        
+        
+        
+#         new_mat_h = jnp.matmul(
+#             mat_h, mat_m_i, precision=_INVERSE_PTH_ROOT_PRECISION)
+        new_mat_h = torch.matmul(mat_h, mat_m_i,)
+        
+        
+#         new_error = jnp.max(jnp.abs(new_mat_m - identity))
+        new_error = torch.max(torch.abs(new_mat_m - identity)).item()
+    
+#         print('i+1')
+#         print(i+1)
+        
+        # sometimes error increases after an iteration before decreasing and
+        # converging. 1.2 factor is used to bound the maximal allowed increase.
+        return (i + 1, new_mat_m, new_mat_h, mat_h, new_error,
+                new_error < error * 1.2)
+    
+    mat_g_size = mat_g.shape[0]
+    
+#     alpha = jnp.asarray(-1.0 / p, _INVERSE_PTH_ROOT_DATA_TYPE)
+    alpha = -1.0 / p
+
+    identity = torch.eye(mat_g_size, device=device)
+        
+    
+    
+#     _, max_ev, _ = power_iter(mat_g)
+#     ridge_epsilon = ridge_epsilon * jnp.maximum(max_ev, 1e-16)
+    
+    assert mat_g_size > 1
+    
+    if if_damped_already:
+        damped_mat_g = mat_g
+    else:
+        damped_mat_g = mat_g + ridge_epsilon * identity
+    
+#     z = (1 + p) / (2 * jnp.linalg.norm(damped_mat_g))
+    z = (1 + p) / (2 * torch.linalg.norm(damped_mat_g))
+    
+    new_mat_m_0 = damped_mat_g * z
+    
+#     new_error = jnp.max(jnp.abs(new_mat_m_0 - identity))
+    new_error = torch.max(torch.abs(new_mat_m_0 - identity)).item()
+    
+#     new_mat_h_0 = identity * jnp.power(z, 1.0 / p)
+    new_mat_h_0 = identity * torch.pow(z, 1.0 / p)
+    
+    
+    
+    init_state = tuple(
+        [0, new_mat_m_0, new_mat_h_0, new_mat_h_0, new_error, True]
+    )
+    
+#     _, mat_m, mat_h, old_mat_h, error, convergence = lax.while_loop(
+#         _iter_condition, _iter_body, init_state)
+    _, mat_m, mat_h, old_mat_h, error, convergence = coupled_newton_while_loop(
+        coupled_newton_iter_condition, coupled_newton_iter_body, init_state)
+    
+#     error = jnp.max(jnp.abs(mat_m - identity))
+    error = torch.max(torch.abs(mat_m - identity)).item()
+    
+#     is_converged = jnp.asarray(convergence, old_mat_h.dtype)
+    is_converged = convergence
+    
+    resultant_mat_h = is_converged * mat_h + (1 - is_converged) * old_mat_h
+    
+#     resultant_mat_h = jnp.asarray(resultant_mat_h, mat_g.dtype)
+    
+#     return resultant_mat_h, error
+    return resultant_mat_h
+
 def get_block_Fisher(h, a, l, params):
     
     device = params['device']
@@ -164,21 +343,82 @@ def get_BFGS_formula_v2(H, s, y, g_k, if_test_mode):
 
     Hy = torch.mv(H, y)
     
-#     H_new = H.data +\
-#     (rho**2 * torch.dot(y, torch.mv(H, y)) + rho) * torch.ger(s, s) -\
-#     rho * (torch.ger(s, Hy) + torch.ger(Hy, s))
-    
-#     H_new = H.data +\
-#     (rho**2 * torch.dot(y, torch.mv(H, y)) + rho) * torch.ger(s, s) -\
-#     (torch.ger(rho*s, Hy) + torch.ger(Hy, rho*s))
+
     
 #     H_new = H.data +\
 #     (rho**2 * torch.dot(y, Hy) + rho) * torch.ger(s, s) -\
 #     (torch.ger(rho*s, Hy) + torch.ger(Hy, rho*s))
     
+#     H_new = H.data +\
+#     torch.ger((rho**2 * torch.dot(y, Hy) + rho)*s, s) -\
+#     (torch.ger(rho*s, Hy) + torch.ger(Hy, rho*s))
+    
     H_new = H.data +\
-    torch.ger((rho**2 * torch.dot(y, Hy) + rho)*s, s) -\
+    torch.ger((rho * torch.dot(y, Hy) + 1)*s, rho*s) -\
     (torch.ger(rho*s, Hy) + torch.ger(Hy, rho*s))
+    
+#     if torch.max(torch.isinf(H_new)):
+#         print('inf in H')
+#         print('s')
+#         print(s)
+#         print('y')
+#         print(y)
+        
+#         print('torch.norm(H_new)')
+#         print(torch.norm(H_new))
+        
+#         print('torch.norm(H)')
+#         print(torch.norm(H))
+        
+#         print('torch.norm(s)')
+#         print(torch.norm(s))
+        
+#         print('torch.norm(y)')
+#         print(torch.norm(y))
+        
+#         print('rho_inv')
+#         print(rho_inv)
+        
+#         print('torch.norm(torch.ger((rho**2 * torch.dot(y, Hy) + rho)*s, s))')
+#         print(
+#             torch.norm(
+#                 torch.ger(
+#                     (rho**2 * torch.dot(y, Hy) + rho)*s, s
+#                 )
+#             )
+#         )
+        
+#         print('torch.norm(torch.ger((rho * torch.dot(y, Hy) + 1)*s, rho*s))')
+#         print(torch.norm(torch.ger((rho * torch.dot(y, Hy) + 1)*s, rho*s)))
+        
+#         print('torch.norm((rho**2 * torch.dot(y, Hy) + rho)*s)')
+#         print(torch.norm((rho**2 * torch.dot(y, Hy) + rho)*s))
+        
+#         print('rho**2 * torch.dot(y, Hy) + rho')
+#         print(rho**2 * torch.dot(y, Hy) + rho)
+        
+#         print('rho**2 * torch.dot(y, Hy)')
+#         print(rho**2 * torch.dot(y, Hy))
+        
+#         print('rho**2')
+#         print(rho**2)
+        
+#         print('torch.dot(y, Hy)')
+#         print(torch.dot(y, Hy))
+        
+#         print('torch.norm(Hy)')
+#         print(torch.norm(Hy))
+        
+#         print('torch.dot(rho*y, rho*Hy)')
+#         print(torch.dot(rho*y, rho*Hy))
+        
+#         print('torch.norm(torch.ger(rho*s, Hy))')
+#         print(torch.norm(torch.ger(rho*s, Hy)))
+        
+#         print('torch.norm(torch.ger(Hy, rho*s))')
+#         print(torch.norm(torch.ger(Hy, rho*s)))
+        
+#         sys.exit()
     
     if if_test_mode:
         
@@ -213,13 +453,7 @@ def get_BFGS_formula_v2(H, s, y, g_k, if_test_mode):
 #     else:
     H = H_new
 
-#     if torch.max(torch.isinf(H)):
-#         print('inf in H')
-#         print('s')
-#         print(s)
-#         print('y')
-#         print(y)
-#         sys.exit()
+    
 
     return H, 0
 
@@ -447,26 +681,34 @@ def add_conv_block(layers_, in_channels, out_channels, kernel_size, stride, padd
                                   'CIFAR-100-onTheFly-N1-128-ResNet34-BN-BNshortcutDownsampleOnly-NoBias',
                                   'CIFAR-100-onTheFly-N1-128-ResNet34-BN-PaddingShortcutDownsampleOnly-NoBias',]:
         layer_2['name'] = 'conv-no-bias-no-activation'
-    elif params['name_dataset'] in ['CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
-                                    'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-                                    'CIFAR-10-AllCNNC',
+    elif params['name_dataset'] in ['CIFAR-10-AllCNNC',
                                     'CIFAR-10-N1-128-AllCNNC',
                                     'CIFAR-10-N1-512-AllCNNC',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                                    'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                                    'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
+                                    'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-10-onTheFly-ResNet32-BNNoAffine',
+                                    'CIFAR-10-onTheFly-ResNet32-BN',
+                                    'CIFAR-10-onTheFly-ResNet32-BN-BNshortcut',
+                                    'CIFAR-10-onTheFly-ResNet32-BN-BNshortcutDownsampleOnly',
                                     'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                     'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                                     'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                                     'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                                     'CIFAR-100-onTheFly-vgg16-NoLinear-BN-no-regularization',
                                     'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                     'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                                     'CIFAR-100-onTheFly-AllCNNC',
-                                    'CIFAR-10-onTheFly-ResNet32-BNNoAffine',
-                                    'CIFAR-10-onTheFly-ResNet32-BN',
-                                    'CIFAR-10-onTheFly-ResNet32-BN-BNshortcut',
-                                    'CIFAR-10-onTheFly-ResNet32-BN-BNshortcutDownsampleOnly',
                                     'CIFAR-100-onTheFly-ResNet34-BNNoAffine',
                                     'CIFAR-100-onTheFly-ResNet34-BN',
                                     'CIFAR-100-onTheFly-ResNet34-BN-BNshortcut',
@@ -494,7 +736,9 @@ def add_conv_block(layers_, in_channels, out_channels, kernel_size, stride, padd
     
     if params['name_dataset'] in ['CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                                  'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
+                                  'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',
                                   'CIFAR-10-onTheFly-ResNet32-BN',
                                   'CIFAR-10-onTheFly-ResNet32-BN-BNshortcut',
                                   'CIFAR-10-onTheFly-ResNet32-BN-BNshortcutDownsampleOnly',
@@ -522,11 +766,12 @@ def add_conv_block(layers_, in_channels, out_channels, kernel_size, stride, padd
         layers_.append(layer_2)
     elif params['name_dataset'] in ['CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                                     'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-                                    'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
-                                    'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                                     'CIFAR-10-onTheFly-ResNet32-BNNoAffine',
                                     'CIFAR-10-onTheFly-ResNet32-BNNoAffine-NoBias',
                                     'CIFAR-10-onTheFly-N1-128-ResNet32-BNNoAffine-PaddingShortcutDownsampleOnly-NoBias-no-regularization',
+                                    'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                                    'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                                     'CIFAR-100-onTheFly-ResNet34-BNNoAffine',]:
         layer_2 = {}
         layer_2['name'] = 'BNNoAffine'
@@ -536,18 +781,22 @@ def add_conv_block(layers_, in_channels, out_channels, kernel_size, stride, padd
     elif params['name_dataset'] in ['CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
-                                    'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-10-AllCNNC',
                                     'CIFAR-10-N1-128-AllCNNC',
                                     'CIFAR-10-N1-512-AllCNNC',
                                     'CIFAR-10-ConvPoolCNNC',
+                                    'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                                    'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
+                                    'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
                                     'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                     'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                    'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                     'CIFAR-100-onTheFly-AllCNNC']:
         1
     else:
@@ -561,9 +810,6 @@ def add_conv_block(layers_, in_channels, out_channels, kernel_size, stride, padd
     return layers_
 
 def get_next_lr(list_lr_tried, best_lr):
-    
-    list_lr_complete =\
-    [1e-10, 3e-10, 1e-9, 3e-9, 1e-8, 3e-8, 1e-7, 3e-7, 1e-6, 3e-6, 1e-5, 3e-5, 1e-4, 3e-4, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000]
     
     if best_lr == min(list_lr_tried):
         
@@ -583,7 +829,6 @@ def get_next_lr(list_lr_tried, best_lr):
         else:
             return list_lr_complete[list_lr_complete.index(best_lr) + 1]
         
-#         sys.exit()
     elif best_lr > min(list_lr_tried) and best_lr < max(list_lr_tried):
         return -1
     else:
@@ -600,8 +845,8 @@ def add_some_if_record_to_args(args):
         args['if_record_sgn_norm'] = False
     if not 'if_record_p_norm' in args:
         args['if_record_p_norm'] = False
-    if not 'if_record_kron_bfgs_cosine' in args:
-        args['if_record_kron_bfgs_cosine'] = False
+#     if not 'if_record_kron_bfgs_cosine' in args:
+#         args['if_record_kron_bfgs_cosine'] = False
     if not 'if_record_kfac_p_norm' in args:
         args['if_record_kfac_p_norm'] = False
     if not 'if_record_kfac_p_cosine' in args:
@@ -736,6 +981,7 @@ def add_matrix_name_to_args(args):
                                'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad-LRdecay',
                                'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2-regularized-grad-momentum-grad',
                                'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2-regularized-grad-momentum-grad',
+                               'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt-regularized-grad-momentum-grad',
                                'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT-regularized-grad-momentum-grad',
                                'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting-regularized-grad-momentum-grad',
                                'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep-regularized-grad-momentum-grad',
@@ -826,6 +1072,8 @@ def add_matrix_name_to_args(args):
                                'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad',
                                'shampoo-allVariables-filterFlattening-warmStart-lessInverse-momentum-grad-LRdecay',
                                'shampoo-no-sqrt-momentum-grad',
+                               'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad',
+                               'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart-momentum-grad-LRdecay',
                                'Adam-momentum-grad',
                                'Adam-noWarmStart-momentum-grad',
                                'Adam-noWarmStart-momentum-grad-LRdecay',
@@ -934,7 +1182,8 @@ def get_warm_start(data_, params):
         params['algorithm'] in ['shampoo-allVariables-warmStart',
                                 'shampoo-allVariables-warmStart-lessInverse',
                                 'shampoo-allVariables-filterFlattening-warmStart',
-                                'shampoo-allVariables-filterFlattening-warmStart-lessInverse',]:
+                                'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
+                                'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
             
 #             assert params['tau'] == 0
             
@@ -977,6 +1226,7 @@ def get_warm_start(data_, params):
                                        'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                                        'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                       'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                                        'shampoo-allVariables-warmStart',
                                        'shampoo-allVariables-warmStart-lessInverse',
                                        'shampoo-allVariables-filterFlattening-warmStart',
@@ -1061,8 +1311,6 @@ def get_warm_start(data_, params):
                     data_['block_Fisher'][l] *= (j-1)/j
                     data_['block_Fisher'][l] += 1/j * G_j
                 
-#                 sys.exit()
-                
             else:
                 print('error: need to check for ' + params['algorithm'])
                 sys.exit()
@@ -1122,7 +1370,7 @@ def get_h_l_unfolded_noHomo(h, l, params):
     
     layers_params = params['layers_params']
     
-    assert layers_params[l]['name'] in ['conv', 'conv-no-activation']
+    assert layers_params[l]['name'] in ['conv', 'conv-no-activation', 'conv-no-bias-no-activation']
     
     padding = layers_params[l]['conv_padding']
     kernel_size = layers_params[l]['conv_kernel_size']
@@ -1291,7 +1539,8 @@ def get_A_A_T_v_kfac_v2(v, h, l, params, data_):
         
         test_2_A_j = torch.einsum('sti,stj->ij', h_l_padded_unfolded, h_l_padded_unfolded)
     elif layers_params[l]['name'] in ['conv',
-                                      'conv-no-activation']:
+                                      'conv-no-activation',
+                                      'conv-no-bias-no-activation',]:
         
 #         h_l_padded_unfolded = data_['h_N2_unfolded'][l]
     
@@ -1321,25 +1570,28 @@ def get_A_A_T_v_kfac_v2(v, h, l, params, data_):
 #         h_l_padded_unfolded_noHomo_noFlatten = data_['h_N2_unfolded_noHomo_noFlatten'][l]
 
 #         size_minibatch = h_l_padded_unfolded_noHomo_noFlatten.size(0)
+
+        assert params['Kron_BFGS_if_homo']
     
-        if params['Kron_BFGS_if_homo']:
+        if layers_params[l]['name'] in ['conv',
+                                        'conv-no-activation',]:
             
             Av = torch.mv(h_l_padded_unfolded_noHomo_viewed, v[:-1]) + v[-1].item()
             
-            Av = torch.cat((torch.mv(h_l_padded_unfolded_noHomo_viewed.t(), Av), torch.sum(Av).unsqueeze(dim=0)))
+            Av = torch.cat(
+                (
+                    torch.mv(h_l_padded_unfolded_noHomo_viewed.t(), Av),
+                    torch.sum(Av).unsqueeze(dim=0)
+                )
+            )
 
-#             v_viewed = v[:-1].view(h_l_padded_unfolded_noHomo_noFlatten.size(-3), h_l_padded_unfolded_noHomo_noFlatten.size(-2), h_l_padded_unfolded_noHomo_noFlatten.size(-1))
-            
-#             Av = torch.einsum('ijklmn,lmn->ijk', h_l_padded_unfolded_noHomo_noFlatten, v_viewed) + v[-1].item()
-            
-#             Av = torch.cat(
-#                 (
-#                     torch.einsum('ijklmn,ijk->lmn', h_l_padded_unfolded_noHomo_noFlatten, Av).view(-1),
-#                     torch.sum(Av).unsqueeze(dim=0)
-#                 )
-#             )
+
+
+        elif layers_params[l]['name'] in ['conv-no-bias-no-activation',]:
+            Av = torch.mv(h_l_padded_unfolded_noHomo_viewed, v)
+            Av = torch.mv(h_l_padded_unfolded_noHomo_viewed.t(), Av)
         else:
-            print('error: need to check')
+            print('error: need to check for ' + layers_params[l]['name'])
             sys.exit()
         
         Av = Av / size_minibatch
@@ -1347,11 +1599,9 @@ def get_A_A_T_v_kfac_v2(v, h, l, params, data_):
         
        
     else:
-        print('error: not implemented')
+        print('error: not implemented for ' + layers_params[l]['name'])
         sys.exit()
     
-                
-#     return test_2_A_j
     return Av
 
 
@@ -1538,13 +1788,7 @@ def get_A_A_T_v(v, h, l, params, data_):
         # a more space consuming but possibly faster way
 
         Av = get_A_A_T_v_kfac_v2(v, h, l, params, data_)
-
-
-
-
-
-
-#         A_j = test_2_A_j
+        
     else:
         print('error in get_A_A_T unknown: ' + layers_params[l]['name'])
         sys.exit()
@@ -2384,7 +2628,72 @@ def get_second_order_caches(z, a, h, data_, params):
 
 #                 data_['a_N2'] = [a_l[N2_index].data for a_l in a]
             data_['mean_a_N2'] = [torch.mean(a_l[N2_index], dim=0).data for a_l in a]
+    elif matrix_name == 'Fisher':
+        
+        if params['i'] % params['shampoo_update_freq'] != 0:
+            return data_
 
+
+        t_mb_pred_N2 = sample_from_pred_dist(z, params)
+
+
+        data_['t_mb_pred_N2'] = t_mb_pred_N2
+        
+        z, a_N2, h_N2 = model.forward(X_mb_N2)
+
+        
+
+        reduction = 'mean'
+        loss = get_loss_from_z(model, z, t_mb_pred_N2, reduction) # this is unregularized loss
+
+
+        model.zero_grad()
+
+        loss.backward()
+
+        l = -1
+        for a_l in a_N2:
+            l += 1
+
+            if torch.sum(a_l.grad != a_l.grad):
+                print('nan in a_l.grad')
+                print('l')
+                print(l)
+                print('torch.sum(a_N2[l].grad, dim=0)')
+                print(torch.sum(a_N2[l].grad, dim=0))
+                print('get_if_nan(model.layers_weight)')
+                print(get_if_nan(model.layers_weight))
+                print('torch.sum(model.layers_weight[l][W].grad != model.layers_weight[l][W].grad)')
+                print(torch.sum(model.layers_weight[l]['W'].grad != model.layers_weight[l]['W'].grad))
+                print('a_l.grad')
+                print(a_l.grad)
+                print('t_mb_pred_N2')
+                print(t_mb_pred_N2)
+                print('t_mb_pred_N2.size()')
+                print(t_mb_pred_N2.size())
+                print('torch.sum(t_mb_pred_N2 != t_mb_pred_N2)')
+                print(torch.sum(t_mb_pred_N2 != t_mb_pred_N2))
+                print('get_if_nan(model.layers_weight)')
+                print(get_if_nan(model.layers_weight))
+                print('torch.sum(z != z)')
+                print(torch.sum(z != z))
+
+
+
+
+
+        data_['a_grad_N2'] = [N2 * (a_l.grad) for a_l in a_N2]
+        # not used for the algorithms that we currently care about
+
+        data_['h_N2'] = h_N2
+
+        data_['a_N2'] = a_N2
+
+
+
+        if params['if_model_grad_N2']:
+            # this is unregularized grad
+            data_['model_grad_N2'] = get_model_grad(model, params)
             
     elif matrix_name == 'Fisher-correct':
         
@@ -2603,13 +2912,6 @@ def get_name_loss(dataset):
                    'CIFAR-10-vgg11',
                    'CIFAR-10-NoAugmentation-vgg11',
                    'CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
-                   'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
-                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                    'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                    'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                    'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
@@ -2619,18 +2921,18 @@ def get_name_loss(dataset):
                    'CIFAR-10-N1-128-AllCNNC',
                    'CIFAR-10-N1-512-AllCNNC',
                    'CIFAR-10-ConvPoolCNNC',
-                   'CIFAR-100',
-                   'CIFAR-100-NoAugmentation',
-                   'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
-                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
-                   'CIFAR-100-onTheFly-vgg16-NoLinear-BN-no-regularization',
-                   'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                   'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-                   'CIFAR-100-onTheFly-AllCNNC',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                   'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
+                   'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                   'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',
+                   'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                   'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
+                   'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                    'CIFAR-10-onTheFly-ResNet32-BNNoAffine',
                    'CIFAR-10-onTheFly-ResNet32-BN',
                    'CIFAR-10-onTheFly-ResNet32-BN-BNshortcut',
@@ -2641,6 +2943,20 @@ def get_name_loss(dataset):
                    'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias',
                    'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization',
                    'CIFAR-10-onTheFly-ResNet32-BNNoAffine-NoBias',
+                   'CIFAR-100',
+                   'CIFAR-100-NoAugmentation',
+                   'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                   'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                   'CIFAR-100-onTheFly-vgg16-NoLinear-BN-no-regularization',
+                   'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                   'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                   'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                   'CIFAR-100-onTheFly-AllCNNC',
                    'CIFAR-100-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias',
                    'CIFAR-100-onTheFly-ResNet34-BNNoAffine',
                    'CIFAR-100-onTheFly-ResNet34-BN',
@@ -2713,10 +3029,12 @@ def from_dataset_to_N1_N2(args):
     if not 'tau' in args:
         args['tau'] = 10**(-5) # https://arxiv.org/pdf/1503.05671.pdf
     
-    if 'N1' in args or 'N2' in args:
-        print('error: N1, N2 not automated')
-        sys.exit()
-    else:
+#     if 'N1' in args or 'N2' in args:
+#         print('error: N1, N2 not automated')
+#         sys.exit()
+#     else:
+
+    if 1:
         if args['dataset'] == 'MNIST-N1-1000':
             args['N1'] = 1000
             args['N2'] = 1000
@@ -2912,6 +3230,13 @@ def from_dataset_to_N1_N2(args):
             
             args['tau'] = 0.0005 # https://arxiv.org/pdf/1910.05446.pdf
             
+        elif args['dataset'] == 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization':
+            
+            args['N1'] = 128
+            args['N2'] = 128
+            
+            args['tau'] = 0.0
+            
         elif args['dataset'] == 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization':
             
             args['N1'] = 128
@@ -2946,6 +3271,13 @@ def from_dataset_to_N1_N2(args):
             args['N2'] = 256
             
             args['tau'] = 0.0005 # https://arxiv.org/pdf/1910.05446.pdf
+            
+        elif args['dataset'] == 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization':
+            
+            args['N1'] = 256
+            args['N2'] = 256
+            
+            args['tau'] = 0.0
             
         elif args['dataset'] == 'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine':
             
@@ -3009,6 +3341,12 @@ def from_dataset_to_N1_N2(args):
             args['N2'] = 256
             args['tau'] = 0.0005 # https://arxiv.org/pdf/1910.05446.pdf
             
+        elif args['dataset'] == 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization':
+            # https://arxiv.org/pdf/1910.05446.pdf
+            args['N1'] = 256
+            args['N2'] = 256
+            args['tau'] = 0.0
+            
         elif args['dataset'] == 'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool':
             # https://arxiv.org/pdf/1910.05446.pdf
             args['N1'] = 256
@@ -3028,6 +3366,27 @@ def from_dataset_to_N1_N2(args):
             args['N2'] = 128
             args['tau'] = 0.0005 # https://arxiv.org/pdf/1910.05446.pdf
             
+        elif args['dataset'] == 'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization':
+            
+            # https://arxiv.org/pdf/1910.05446.pdf
+            args['N1'] = 128
+            args['N2'] = 128
+            args['tau'] = 0.0
+            
+        elif args['dataset'] == 'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization':
+            
+            # https://arxiv.org/pdf/1910.05446.pdf
+            args['N1'] = 128
+            args['N2'] = 128
+            args['tau'] = 0.0
+            
+        elif args['dataset'] == 'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization':
+            
+            # https://arxiv.org/pdf/1910.05446.pdf
+            args['N1'] = 128
+            args['N2'] = 128
+            args['tau'] = 0.0
+            
         elif args['dataset'] == 'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias':
             
             # https://arxiv.org/pdf/1910.05446.pdf
@@ -3041,6 +3400,13 @@ def from_dataset_to_N1_N2(args):
             args['N1'] = 128
             args['N2'] = 128
             args['tau'] = 0.0005 # https://arxiv.org/pdf/1910.05446.pdf
+            
+        elif args['dataset'] == 'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization':
+            
+            # https://arxiv.org/pdf/1910.05446.pdf
+            args['N1'] = 128
+            args['N2'] = 128
+            args['tau'] = 0.0
             
         elif args['dataset'] == 'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout':
             # https://arxiv.org/pdf/1910.05446.pdf
@@ -3258,11 +3624,7 @@ def tune_lr(args):
     args = add_matrix_name_to_args(args)
     args = add_some_if_record_to_args(args)
     
-#     assert 'max_epoch/time' in args
-#     assert 'record_epoch' in args
-#     assert 'if_test_mode' in args
-    
-    args['momentum_gradient_rho'] = 0.9
+#     args['momentum_gradient_rho'] = 0.9
     args['lambda_'] = 1
     
     if args['if_auto_tune_lr']:
@@ -3273,12 +3635,8 @@ def tune_lr(args):
             args['alpha'] = learning_rate
             name_result, data_, params_saved = train(args)
             
-            print_gpu_usage({'device': 'cuda:0'})
-            
             data_ = None
             torch.cuda.empty_cache()
-            
-            print_gpu_usage({'device': 'cuda:0'})
             
             
             
@@ -3331,7 +3689,9 @@ def tune_lr(args):
         print('list_lr_tried, best_lr')
         print(list_lr_tried, best_lr)
         
-#         sys.exit()
+        tune_lr_output = {}
+        tune_lr_output['best_lr'] = best_lr
+        tune_lr_output['list_lr_tried'] = list_lr_tried
     else:
 
 
@@ -3341,9 +3701,12 @@ def tune_lr(args):
             
             data_ = None
             torch.cuda.empty_cache()
+            
+        tune_lr_output = None
 
 
-    return data_
+#     return data_
+    return tune_lr_output
 
     
     
@@ -4789,8 +5152,6 @@ def get_plus_torch(model_grad, delta):
 def get_if_nan(p):
     for l in range(len(p)):
         for key in p[l]:
-            # print('p[l][key] != p[l][key]')
-            # print(p[l][key] != p[l][key])
             if torch.sum(p[l][key] != p[l][key]):
                 return True
     return False
@@ -5624,10 +5985,20 @@ def get_dot_product_blockwise(delta_1, delta_2):
     return dot_product
 
 def get_dot_product_torch(delta_1, delta_2):
-    dot_product = 0
-    for l in range(len(delta_1)):
-        for key in delta_1[l]:
-            dot_product += torch.sum(torch.mul(delta_1[l][key], delta_2[l][key]))
+#     dot_product = 0
+#     for delta_1_l, delta_2_l in zip(delta_1, delta_2):
+#         dot_product += sum([torch.sum(torch.mul(delta_1_l[key], delta_2_l[key])).item() for key in delta_1_l])
+    
+    dot_product = sum(
+        [
+            sum(
+                [
+                    torch.sum(torch.mul(delta_1_l[key], delta_2_l[key])).item() for key in delta_1_l
+                ]
+            ) for delta_1_l, delta_2_l in zip(delta_1, delta_2)
+        ]
+    )
+            
     return dot_product
 
 def get_dot_product_blockwise_torch(delta_1, delta_2):
@@ -6676,39 +7047,47 @@ def RMSprop_update(data_, params):
 
 def update_parameter(p_torch, model, params):
     numlayers = params['numlayers']
-    
-#     alpha = params['alpha']
     alpha = params['alpha_current']
-    
     device = params['device']
 
     
     for l in range(numlayers):
         
+#         print('params[layers_params][l][name]')
+#         print(params['layers_params'][l]['name'])
+        
         for name_variable in model.layers_weight[l].keys():
             
             if params['weight_decay'] != 0:
                 model.layers_weight[l][name_variable].data *= (1 - alpha*params['weight_decay'])
+                
+#             if params['layers_params'][l]['name'] == 'conv-no-activation' and name_variable == 'b':
+                
+#                 print('name_variable')
+#                 print(name_variable)
+            
+#                 print('torch.norm(model.layers_weight[l][name_variable]).item()')
+#                 print(torch.norm(model.layers_weight[l][name_variable]).item())
+            
+#                 print('torch.norm(p_torch[l][name_variable]).item()')
+#                 print(torch.norm(p_torch[l][name_variable]).item())
+                
+#                 print('need to change back')
+#                 continue
+                
             
             model.layers_weight[l][name_variable].data += alpha * p_torch[l][name_variable].data
+            
+#             print('name_variable')
+#             print(name_variable)
+            
+#             print('torch.norm(model.layers_weight[l][name_variable]).item()')
+#             print(torch.norm(model.layers_weight[l][name_variable]).item())
+            
+#             print('torch.norm(p_torch[l][name_variable]).item()')
+#             print(torch.norm(p_torch[l][name_variable]).item())
         
-#         if params['layers_params'][l]['name'] in ['fully-connected',
-#                                                   'conv',
-#                                                   'conv-no-activation',
-#                                                   '1d-conv',
-#                                                   'BN']:
 
-#             model.layers_weight[l]['W'].data += alpha * p_torch[l]['W'].data
-#             model.layers_weight[l]['b'].data += alpha * p_torch[l]['b'].data
-
-#         elif params['layers_params'][l]['name'] in ['conv-no-bias-no-activation']:
-
-#             model.layers_weight[l]['W'].data += alpha * p_torch[l]['W'].data
-#         else:
-#             print('params[layers_params][l][name]')
-#             print(params['layers_params'][l]['name'])
-#             print('Error: layer not supported when update parameter')
-#             sys.exit()
         
     return model
 
@@ -7674,39 +8053,28 @@ def get_layers_params(name_model, layersizes, activations, params):
             layer_['output_size'] = 100
             layer_['activation'] = 'linear'
             layers_.append(layer_)
-        elif params['name_dataset'] == 'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization':
+        elif params['name_dataset'] in ['CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                                        'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',]:
+            layer_ = {}
+            layer_['name'] = 'fully-connected'
+            layer_['input_size'] = 512
+            layer_['output_size'] = 10
+            layer_['activation'] = 'linear'
+            layers_.append(layer_)
+        elif params['name_dataset'] in ['CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                                        'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                                        'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                                        'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                                        'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                                        'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                                        'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',]:
         
         
 
             layer_ = {}
             layer_['name'] = 'fully-connected'
-
-    #         if params['name_dataset'] in ['CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
-    #                                       'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-    #                                       'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
-    #                                       'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine']:
-    #             layer_['input_size'] = 512
-    #         elif params['name_dataset'] == 'CIFAR-10-vgg16':
-    #             layer_['input_size'] = 25088
-    #         else:
-    #             print('error: need to check for ' + params['name_dataset'])
-    #             sys.exit()
 
             layer_['input_size'] = 512
             layer_['output_size'] = 4096
@@ -7752,35 +8120,6 @@ def get_layers_params(name_model, layersizes, activations, params):
             layer_['activation'] = 'relu'
             layers_.append(layer_)
 
-    #         if params['name_dataset'] in ['CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
-    #                                       'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-    #                                       'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-    #                                       'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
-    #                                       'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-    #                                       'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine']:
-    #             1
-    #         elif params['name_dataset'] in ['CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool']:
-    #             layer_ = {}
-    #             layer_['name'] = 'dropout'
-    #             layer_['dropout_p'] = 0.5
-    #             layers_.append(layer_)
-    #         else:
-    #             print('error: need to check for ' + params['name_dataset'])
-    #             sys.exit()
-
 
 
 
@@ -7791,10 +8130,13 @@ def get_layers_params(name_model, layersizes, activations, params):
             if params['name_dataset'] in ['CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
                                           'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                                           'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                          'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                           'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                                           'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                                          'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                                           'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
                                           'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                                          'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                                           'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                                           'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                                           'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
@@ -7803,10 +8145,12 @@ def get_layers_params(name_model, layersizes, activations, params):
             elif params['name_dataset'] in ['CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                                             'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
                                             'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                            'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                             'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                                             'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                                             'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                                             'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                                            'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                                             'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine']:
                 layer_['output_size'] = 100
             else:
@@ -8151,26 +8495,33 @@ class Model_3(nn.Module):
             self.name_model = '1d-CNN'
         elif name_dataset in ['CIFAR-10-vgg16',
                               'CIFAR-10-vgg16-NoAdaptiveAvgPoolNoDropout',
+                              'CIFAR-10-vgg16-GAP',
                               'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                               'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                              'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                               'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
                               'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
-                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
-                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
                               'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
+                              'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
+                              'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                              'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',
                               'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                               'CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                               'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                               'CIFAR-10-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
-                              'CIFAR-10-vgg16-GAP',
                               'CIFAR-100-NoAugmentation-vgg16-NoAdaptiveAvgPoolNoDropout',
                               'CIFAR-100-NoAugmentation-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
                               'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                              'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                               'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                               'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                               'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                               'CIFAR-100-onTheFly-vgg16-NoLinear-BN-no-regularization',
                               'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                              'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                               'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                               'Subsampled-ImageNet-vgg16',]:
             self.name_model = 'vgg16'
@@ -10127,7 +10478,7 @@ def train_initialization(data_, params, args):
         params['num_epoch_to_decay'] = args['num_epoch_to_decay']
         params['lr_decay_rate'] = args['lr_decay_rate']
         
-#     import utils_git.utils_kbfgs as utils_kbfgs
+    import utils_git.utils_kbfgs as utils_kbfgs
     import utils_git.utils_shampoo as utils_shampoo
     import utils_git.utils_kfac as utils_kfac
 
@@ -10386,53 +10737,761 @@ def train_initialization(data_, params, args):
                             get_multiply_scalar(1/j, get_square_torch(model_grad))
                         )
 
+    elif algorithm in utils_kbfgs.list_algorithm:
+        
+        if params['N1'] != params['N2']:
+            print('Error: N1 != N2')
+            sys.exit()
+            
+        params['Kron_BFGS_if_BN_grad_direction_divided_by_damping'] = args['Kron_BFGS_if_BN_grad_direction_divided_by_damping']
+            
+        params['Kron_BFGS_if_BN_grad_direction'] = args['Kron_BFGS_if_BN_grad_direction']
+        
+        params['Kron_BFGS_update_freq'] = args['Kron_BFGS_update_freq']
+        
+        params['if_Kron_BFGS_LM'] = args['if_Kron_BFGS_LM']
+        params['if_Kron_BFGS_use_alpha_in_extra_step'] = args['if_Kron_BFGS_use_alpha_in_extra_step']
+        
+        data_['h_N2_unfolded_noHomo'] = [None for l in range(params['numlayers'])]
+        
+        data_['h_N2_unfolded_noHomo_noFlatten'] = [None for l in range(params['numlayers'])]
+        
+        if algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep':
+            params['if_extra_step'] = True
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2']:
+            params['if_extra_step'] = False
+        else:
+            print('need to check for ' + algorithm)
+            sys.exit()
+            
+        if algorithm in ['Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2']:
+            params['if_minibatch_A'] = True
+            
+            if algorithm in ['Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                             'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                             'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                             'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                             'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                             'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2']:
+                params['if_minibatch_A_damped'] = True # true means both initialization and BFGS are damped
+                params['if_minibatch_A_not_damped'] = False
+            elif algorithm in ['Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                               'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                               'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2']:
+                params['if_minibatch_A_damped'] = False
+                params['if_minibatch_A_not_damped'] = False
+            elif algorithm in ['Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2']:
+                params['if_minibatch_A_damped'] = False
+                params['if_minibatch_A_not_damped'] = True # true meaning neither initialization or BFGS is damped
+            
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping']:
+            params['if_minibatch_A'] = False
+            
+            params['if_minibatch_A_not_damped'] = False # to do: check if it is false from previous code
+        else:
+            print('error: need to check for ' + algorithm)
+            sys.exit()
+            
+            
+        
+            
+        
+        if not params['if_minibatch_A']:
+            params['Kron_BFGS_A_decay'] = args['Kron_BFGS_A_decay']
+        
+
+        if algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping']:
+
+#             params['Kron_LBFGS_Hg_initial'] = args['Kron_BFGS_H_initial']
+            params['Kron_LBFGS_Hg_initial'] = args['Kron_LBFGS_Hg_initial']
+        elif algorithm in ['Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2']:
+            params['Kron_LBFGS_Hg_initial'] = args['Kron_LBFGS_Hg_initial']
+            params['Kron_LBFGS_Ha_initial'] = args['Kron_LBFGS_Ha_initial']
+        else:
+            print('error: need to check Kron_BFGS_H_initial for ' + algorithm)
+            sys.exit()
+            
+        
+        if algorithm in ['Kron-BFGS-homo-no-norm-gate-Hessian-action-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_action_h'] = 'Hessian-action-BFGS'
+            
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2']:
+            params['Kron_BFGS_action_h'] = 'HessianActionV2-BFGS'
+            
+        elif algorithm == 'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping':
+            params['Kron_BFGS_action_h'] = 'HessianAction-scaled-BFGS'
+            
+        elif algorithm in ['Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_action_h'] = 'Hessian-action-LBFGS'
+        elif algorithm in ['Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_action_h'] = 'HessianActionV2-LBFGS'
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping',
+                           'Kron-BFGS-homo-no-norm-gate-damping',
+                           'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                           'Kron-BFGS-homo-no-norm-gate-PowellBDamping',
+                           'Kron-BFGS-homo-no-norm-gate-PowellHDampingV2',
+                           'Kron-BFGS-homo-no-norm-gate-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-PowellDoubleDampingV2',
+                           'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                           'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-identity']:
+            params['Kron_BFGS_action_h'] = 'inv'
+        else:
+            print('error: unknown algorithm for action_h: ' + algorithm)
+            sys.exit()
+        
+        data_['Kron_LBFGS_s_y_pairs'] = {}
+        if params['Kron_BFGS_action_h'] in ['Hessian-action-LBFGS',
+                                            'HessianActionV2-LBFGS']:
+#             L = len(params['layersizes']) - 1
+            
+            L = len(params['layers_params'])
+            
+            data_['Kron_LBFGS_s_y_pairs']['h'] = []
+            for l in range(L):
+                data_['Kron_LBFGS_s_y_pairs']['h'].append(
+                    {'s': [], 'y': [], 'R_inv': [], 'yTy': [], 'D_diag': [], 'left_matrix': [], 'right_matrix': [], 'gamma': []}
+                )
+            
+#             data_['Kron_LBFGS_s_y_pairs']['h'] = [{'s': [], 'y': []}] * L
+
+#         print('len(data_[Kron_LBFGS_s_y_pairs][h])')
+#         print(len(data_['Kron_LBFGS_s_y_pairs']['h']))
+#         sys.exit()
+        
+        if params['Kron_BFGS_action_h'] == 'inv':
+            params['Kron_BFGS_A_inv_freq'] = args['Kron_BFGS_A_inv_freq']
+            
+        if algorithm in ['Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_action_a'] = 'LBFGS'
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                           'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                           'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_action_a'] = 'BFGS'
+        else:
+            print('error: unknown algorithm for action_a: ' + algorithm)
+            sys.exit()
+            
+            
+        if params['Kron_BFGS_action_a'] == 'LBFGS':
+            
+#             assert params['numlayers'] == len(params['layersizes']) - 1
+            
+            
+#             L = len(params['layersizes']) - 1
+            L = params['numlayers']
+            
+            data_['Kron_LBFGS_s_y_pairs']['a_grad'] = []
+            for l in range(L):
+                data_['Kron_LBFGS_s_y_pairs']['a_grad'].append(
+                    {'s': [], 'y': [], 'R_inv': [], 'yTy': [], 'D_diag': [], 'left_matrix': [], 'right_matrix': [], 'gamma': []}
+                )
+
+        
+        if algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt':
+            params['Kron_BFGS_damping_splitting'] = 'Sqrt'
+        elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT':
+            params['Kron_BFGS_damping_splitting'] = 'SqrtT'
+        elif algorithm == 'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting':
+            params['Kron_BFGS_damping_splitting'] = 'KFACSplitting'
+        elif algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2']:
+#             params['Kron_BFGS_sqrt_T_splitting'] = False
+            params['Kron_BFGS_damping_splitting'] = None
+        else:
+            print('algorithm')
+            print(algorithm)
+            sys.exit()
+            
+#         print('params[Kron_BFGS_damping_splitting]')
+#         print(params['Kron_BFGS_damping_splitting'])
+        
+#         sys.exit()
+
+
+        if params['Kron_BFGS_damping_splitting'] != None:
+            
+            if params['if_Kron_BFGS_LM']:
+                params['Kron_BFGS_damping_lambda'] = args['Kron_BFGS_damping_lambda_initial']
+                params['Kron_BFGS_damping_lambda_initial'] = args['Kron_BFGS_damping_lambda_initial']
+            else:
+                params['Kron_BFGS_damping_lambda'] = args['Kron_BFGS_damping_lambda']
+            
+        if params['Kron_BFGS_damping_splitting'] == 'KFACSplitting':
+            params['Kron_BFGS_avg_eigen_G'] = []
+            params['Kron_BFGS_avg_eigen_A'] = []
+            
+        
+       
+        
+        if algorithm in ['Kron-BFGS',
+                         'Kron-BFGS-no-norm-gate',
+                         'Kron-BFGS-no-norm-gate-momentum-s-y',
+                         'Kron-BFGS-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-no-norm-gate-damping',
+                         'Kron-BFGS-homo-no-norm-gate-damping',
+                         'Kron-BFGS-no-norm-gate-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellBDamping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellHDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellDoubleDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Hessian-action-Powell-double-damping',
+                         'Kron-BFGS-homo-identity',
+                         'Kron-BFGS-wrong',
+                         'Kron-BFGS-homo',
+                         'Kron-BFGS-Hessian-action',
+                         'Kron-BFGS-wrong-Hessian-action',
+                         'Kron-BFGS-block']:
+            params['Kron_BFGS_A_LM_epsilon'] = args['Kron_BFGS_A_LM_epsilon']
+#             sys.exit()
+            
+           
+            
+            
+        if algorithm in ['Kron-BFGS-no-norm-gate-damping',
+                         'Kron-BFGS-homo-no-norm-gate-damping',
+                         'Kron-BFGS-no-norm-gate-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellBDamping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellHDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellDoubleDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Hessian-action-Powell-double-damping',
+                         'Kron-BFGS-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping']:
+            params['Kron_BFGS_H_epsilon'] = args['Kron_BFGS_H_epsilon']
+            
+        if algorithm in ['Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping']:
+            params['Kron_BFGS_number_s_y'] = args['Kron_BFGS_number_s_y']
+            
+        if algorithm in ['Kron-BFGS-homo-no-norm-gate-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Shiqian-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellBDamping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellHDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-PowellDoubleDampingV2',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-Hessian-action-Powell-double-damping',
+                         'Kron-BFGS-homo-identity']:
+            params['Kron_BFGS_if_homo'] = True
+        elif algorithm == 'Kron-BFGS-no-norm-gate-damping':
+            params['Kron_BFGS_if_homo'] = False
+        else:
+            print('Error: need to check if homo for ' + algorithm)
+            sys.exit()
+            
+        layersizes = params['layersizes']
+        layers_params = params['layers_params']
+        
+        device = params['device']
+        N1 = params['N1']
+        numlayers = params['numlayers']
+        
+        model = data_['model']
+            
+        if algorithm in ['Kron-BFGS-no-norm-gate-momentum-s-y',
+                         'Kron-BFGS-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping',
+                         'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                         'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                         'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                         'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                         'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                         'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping']:
+            
+            
+            
+            from utils_git.utils_kbfgs import get_H_a_grad_size
+            
+            data_['Kron_BFGS_momentum_s_y'] = []
+            for l in range(numlayers):
+                
+                Kron_BFGS_momentum_s_y_l = {}
+                
+                if params['layers_params'][l]['name'] == 'BN' and params['Kron_BFGS_if_BN_grad_direction']:
+                    pass
+                else:
+                    length_s = get_H_a_grad_size(params, l) 
+                    Kron_BFGS_momentum_s_y_l['s'] = torch.zeros(length_s, device=device)
+                    Kron_BFGS_momentum_s_y_l['y'] = torch.zeros(length_s, device=device)
+
+                data_['Kron_BFGS_momentum_s_y'].append(Kron_BFGS_momentum_s_y_l)
+                
+                
+            
+                
+                
+                
+
+            
+        
+            
+        data_['Kron_BFGS_matrices'] = []
+        for l in range(numlayers):
+            Kron_BFGS_matrices_l = {}
+            
+            Kron_BFGS_matrices_l['H'] = {}
+            
+            
+            action_a = params['Kron_BFGS_action_a']
+            
+            if action_a == 'LBFGS':
+                pass
+            elif action_a == 'BFGS':
+                
+                if layers_params[l]['name'] == 'BN' and params['Kron_BFGS_if_BN_grad_direction']:
+                    pass
+                else:
+
+                    size_H_a_grad = get_H_a_grad_size(params, l)
+
+                    Kron_BFGS_matrices_l['H']['a_grad'] =\
+                torch.eye(size_H_a_grad, device=device, requires_grad=False)
+
+                    Kron_BFGS_matrices_l['H']['a_grad'] *= params['Kron_LBFGS_Hg_initial']
+            else:
+                print('error: unknown action_a for ' + action_a)
+                sys.exit()
+                
+            
+                
+            
+            if layers_params[l]['name'] == 'BN':
+                1
+            elif layers_params[l]['name'] in ['conv',
+                                              'conv-no-activation',
+                                              'conv-no-bias-no-activation',
+                                              'fully-connected']:
+                
+                if layers_params[l]['name'] == 'fully-connected':
+                    size_A = layers_params[l]['input_size']
+                    
+                    if params['Kron_BFGS_if_homo']:
+                        size_A += 1
+                elif layers_params[l]['name'] in ['conv',
+                                                  'conv-no-activation',
+                                                  'conv-no-bias-no-activation',]:
+                    # size of A: input_channel * kernel_size*2
+                    size_A = layers_params[l]['conv_in_channels'] *\
+                    layers_params[l]['conv_kernel_size']**2
+                    
+                    if params['Kron_BFGS_if_homo'] and\
+                    layers_params[l]['name'] in ['conv',
+                                                 'conv-no-activation',]:
+                        size_A += 1
+                elif layers_params[l]['name'] == '1d-conv':
+                    # size of A: input_channel * kernel_size
+                    size_A = layers_params[l]['conv_in_channels'] *\
+                    layers_params[l]['conv_kernel_size']
+                    
+                    if params['Kron_BFGS_if_homo']:
+                        size_A += 1
+                else:
+                    print('error: unknown layers_params[l][name] for ' + layers_params[l]['name'])
+                    sys.exit()
+
+
+#                 if params['Kron_BFGS_if_homo']:
+#                     size_A += 1
+
+                Kron_BFGS_matrices_l['A'] = torch.zeros(
+                    size_A, size_A, device=device, requires_grad=False)
+            else:
+                print('error: need to check for ' + layers_params[l]['name'])
+                sys.exit()
+            
+                
+            
+            data_['Kron_BFGS_matrices'].append(Kron_BFGS_matrices_l)
+            
+        from utils_git.utils_kbfgs import get_splitting_pi
+        params = get_splitting_pi(data_, params)
+#         print('need to comment back')
+
+        if params['N1'] < params['num_train_data']:
+            # i.e. stochastic setting
+        
+            i = 0 # position of training data
+            j = 0 # position of mini-batch
+            
+#             from utils_git.utils_kfac import get_A_A_T
+
+            print('Begin warm start...')
+
+            while i + N1 <= params['num_train_data']:
+                
+#                 print('position of trainind data = {}'.format(i))
+                
+                torch.cuda.empty_cache()
+                
+                if params['device'] == 'cuda:0':
+                    print_gpu_usage(params)
+
+                X_mb, t_mb = data_['dataset'].train.next_batch(N1)
+                
+#                 X_mb = torch.from_numpy(X_mb).to(device)
+                
+                if not params['if_dataset_onTheFly']:
+#                     1
+#                 else:
+                    X_mb = torch.from_numpy(X_mb)
+                X_mb = X_mb.to(device)
+
+                z, a, h = model.forward(X_mb)
+
+                i += N1
+                j += 1
+
+                for l in range(numlayers):
+                    # bar_A_j = 1 / j * (A_1 + ... + A_j)
+                    # bar_A_j = (j-1) / j * bar_A_{j-1} + 1 / j * A_j
+            
+                    if layers_params[l]['name'] in ['conv',
+                                                    'conv-no-activation',
+                                                    'conv-no-bias-no-activation',
+                                                    'fully-connected']:
+                        
+
+                        A_j = get_A_A_T(h, l, data_, params)
+
+                        data_['Kron_BFGS_matrices'][l]['A'] *= (j-1)/j
+
+                        assert A_j.requires_grad == False
+        
+        
+                        data_['Kron_BFGS_matrices'][l]['A'] += 1/j * A_j
     
+    
+                        if i + N1 > params['num_train_data']:
+            
+                            action_h = params['Kron_BFGS_action_h']
+                
+                            if action_h in ['Hessian-action-BFGS',
+                                                              'HessianActionV2-BFGS',
+                                                              'HessianAction-scaled-BFGS',
+                                                              'Hessian-action-LBFGS',
+                                                              'HessianActionV2-LBFGS']:
+                        
+                                from utils_git.utils_kbfgs import get_epsilon
+                            
+                                Kron_BFGS_matrices_l = data_['Kron_BFGS_matrices'][l]
+                            
+                                if params['if_minibatch_A_not_damped'] == False:
+                                    epsilon_ = get_epsilon(l, params)
+                                else:
+                                    epsilon_ = 0.01
+                        
+                                A_l_LM = Kron_BFGS_matrices_l['A'] + epsilon_ * torch.eye(Kron_BFGS_matrices_l['A'].size(0), device=device)
+    
+                                
+                                if action_h in ['Hessian-action-BFGS',
+                                                'HessianActionV2-BFGS',
+                                                'HessianAction-scaled-BFGS']:
+
+
+
+
+                                    if algorithm in ['Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
+                                                     'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
+                                                     'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2']:
+                                        Kron_BFGS_matrices_l['H']['h'] = torch.eye(
+                                            A_l_LM.size(0), device=device, requires_grad=False
+                                        )
+
+                                        if params['Kron_LBFGS_Ha_initial'] > 0:
+
+
+                                            Kron_BFGS_matrices_l['H']['h'] *= params['Kron_LBFGS_Ha_initial']
+                                        elif params['Kron_LBFGS_Ha_initial'] == -1:
+
+                                            gamma = torch.trace(Kron_BFGS_matrices_l['A']) / Kron_BFGS_matrices_l['A'].size(0)
+
+                                            print('gamma')
+                                            print(gamma)
+
+                                            Kron_BFGS_matrices_l['H']['h'] /= gamma
+                                        else:
+                                            print('error')
+                                            sys.exit()
+
+                                    elif algorithm in ['Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
+                                                       'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-Sqrt',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
+                                                       'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
+                                                       'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
+                                                       'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping']:
+                                        Kron_BFGS_matrices_l['H']['h'] = A_l_LM.inverse()
+                                    else:
+                                        print('error: not implemented for ' + algorithm)
+                                        sys.exit()
+                        
+                    elif layers_params[l]['name'] == 'BN':
+                        pass
+                    else:
+                        print('error: need to check for ' + layers_params[l]['name'])
+                        sys.exit()
                 
             
 
         
         
     elif params['algorithm'] in utils_shampoo.list_algorithm:
-        '''
-    elif params['algorithm'] in ['shampoo',
-                                 'shampoo-allVariables',
-                                 'shampoo-allVariables-warmStart',
-                                 'shampoo-allVariables-warmStart-lessInverse',
-                                 'shampoo-allVariables-filterFlattening-warmStart',
-                                 'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
-                                 'shampoo-no-sqrt',
-                                 'shampoo-no-sqrt-Fisher',
-                                 'matrix-normal',
-                                 'matrix-normal-allVariables',
-                                 'matrix-normal-allVariables-warmStart',
-                                 'matrix-normal-allVariables-warmStart-MaxEigDamping',
-                                 'matrix-normal-allVariables-warmStart-noPerDimDamping',
-                                 'matrix-normal-same-trace',
-                                 'matrix-normal-same-trace-warmStart',
-                                 'matrix-normal-same-trace-warmStart-noPerDimDamping',
-                                 'matrix-normal-same-trace-allVariables',
-                                 'matrix-normal-same-trace-allVariables-warmStart',
-                                 'matrix-normal-same-trace-allVariables-warmStart-AvgEigDamping',
-                                 'matrix-normal-same-trace-allVariables-warmStart-MaxEigDamping',
-                                 'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
-                                 'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
-                                 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping'
-                                 'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
-                                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
-                                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
-                                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-MaxEigWithEpsilonDamping',
-                                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-AvgEigWithEpsilonDamping',
-                                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
-                                 '''
+        
+        params['shampoo_if_coupled_newton'] = args['shampoo_if_coupled_newton']
         
         params['if_Hessian_action'] = args['if_Hessian_action']
-        
-#         if not params['if_Hessian_action']:
 
         params['shampoo_inverse_freq'] = args['shampoo_inverse_freq']
     
@@ -10462,7 +11521,8 @@ def train_initialization(data_, params, args):
                                      'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                     'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
             params['shampoo_epsilon'] = args['shampoo_epsilon']
         else:
             print('params[algorithm]')
@@ -10506,6 +11566,7 @@ def train_initialization(data_, params, args):
                                    'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                    'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
                                    'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                   'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
                                    'shampoo-allVariables-warmStart',
                                    'shampoo-allVariables-warmStart-lessInverse',
                                    'shampoo-allVariables-filterFlattening-warmStart',
@@ -10654,12 +11715,14 @@ def train(args):
 
         
 
-#     print('args')
-#     print(args)
+    print('args')
+    print(args)
     
     from utils_git.utils_kfac import kfac_update
-#     from utils_git.utils_kbfgs import Kron_BFGS_update_v2
+    from utils_git.utils_kbfgs import Kron_BFGS_update_v2
     from utils_git.utils_shampoo import shampoo_update
+    
+    from utils_git.utils_kbfgs import list_algorithm as kbfgs_list_algorithm
     
     params = {}
     
@@ -10738,7 +11801,7 @@ def train(args):
 
     params['if_record_sgd_norm'] = args['if_record_sgd_norm']
     params['if_record_p_norm'] = args['if_record_p_norm']
-    params['if_record_kron_bfgs_cosine'] = args['if_record_kron_bfgs_cosine']
+#     params['if_record_kron_bfgs_cosine'] = args['if_record_kron_bfgs_cosine']
     params['if_record_kfac_p_norm'] = args['if_record_kfac_p_norm']
     params['if_record_kfac_p_cosine'] = args['if_record_kfac_p_cosine']
     params['if_record_res_grad_norm'] = args['if_record_res_grad_norm']
@@ -10754,9 +11817,9 @@ def train(args):
         if 'if_record_kron_bfgs_matrix_norm_per_iter' in args:
             params['if_record_kron_bfgs_matrix_norm_per_iter'] =\
             args['if_record_kron_bfgs_matrix_norm_per_iter']
-        if 'if_record_loss_per_iter' in args:
-            params['if_record_loss_per_iter'] =\
-            args['if_record_loss_per_iter']
+#         if 'if_record_loss_per_iter' in args:
+#             params['if_record_loss_per_iter'] =\
+#             args['if_record_loss_per_iter']
         if 'if_record_kfac_G_inv_norm_per_iter' in args:
             params['if_record_kfac_G_inv_norm_per_iter'] =\
             args['if_record_kfac_G_inv_norm_per_iter']
@@ -10919,12 +11982,17 @@ def train(args):
 
     if name_dataset in ['CIFAR-10-NoAugmentation-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
                         'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
-                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
-                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
-                        'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                         'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
+                        'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                         'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-NoBias',
                         'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
+                        'CIFAR-10-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
+                        'CIFAR-10-onTheFly-vgg16-NoLinear-no-regularization',
+                        'CIFAR-10-onTheFly-vgg16-NoLinear-BN-no-regularization',
+                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
+                        'CIFAR-10-onTheFly-N1-256-vgg16-NoAdaptiveAvgPool',
+                        'CIFAR-10-onTheFly-N1-512-vgg16-NoAdaptiveAvgPoolNoDropout',
                         'CIFAR-10-onTheFly-ResNet32-BNNoAffine',
                         'CIFAR-10-onTheFly-ResNet32-BN',
                         'CIFAR-10-onTheFly-ResNet32-BN-BNshortcut',
@@ -10934,6 +12002,9 @@ def train(args):
                         'CIFAR-10-onTheFly-N1-128-ResNet32-BN-BNshortcutDownsampleOnly-NoBias',
                         'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias',
                         'CIFAR-10-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias-no-regularization',
+                        'CIFAR-10-AllCNNC',
+                        'CIFAR-10-N1-128-AllCNNC',
+                        'CIFAR-10-N1-512-AllCNNC',
                         'CIFAR-100-onTheFly-N1-128-ResNet32-BN-PaddingShortcutDownsampleOnly-NoBias',
                         'CIFAR-100-onTheFly-ResNet34-BNNoAffine',
                         'CIFAR-100-onTheFly-ResNet34-BN',
@@ -10942,15 +12013,14 @@ def train(args):
                         'CIFAR-100-onTheFly-ResNet34-BN-BNshortcutDownsampleOnly-NoBias',
                         'CIFAR-100-onTheFly-N1-128-ResNet34-BN-BNshortcutDownsampleOnly-NoBias',
                         'CIFAR-100-onTheFly-N1-128-ResNet34-BN-PaddingShortcutDownsampleOnly-NoBias',
-                        'CIFAR-10-AllCNNC',
-                        'CIFAR-10-N1-128-AllCNNC',
-                        'CIFAR-10-N1-512-AllCNNC',
                         'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout',
+                        'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                         'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine-no-regularization',
                         'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN',
                         'CIFAR-100-onTheFly-vgg16-NoAdaptiveAvgPoolNoDropout-BN-no-regularization',
                         'CIFAR-100-onTheFly-vgg16-NoLinear-BN-no-regularization',
                         'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout',
+                        'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-no-regularization',
                         'CIFAR-100-onTheFly-N1-256-vgg16-NoAdaptiveAvgPoolNoDropout-BNNoAffine',
                         'CIFAR-100-onTheFly-AllCNNC']:
         params['if_dataset_onTheFly'] = True
@@ -11206,9 +12276,9 @@ def train(args):
         if params['if_record_kfac_p_cosine']:
             kfac_p_cosines = []
             data_['kfac_p_cosines'] = kfac_p_cosines
-        if params['if_record_kron_bfgs_cosine']:
-            kron_bfgs_cosines = []
-            data_['kron_bfgs_cosines'] = kron_bfgs_cosines
+#         if params['if_record_kron_bfgs_cosine']:
+#             kron_bfgs_cosines = []
+#             data_['kron_bfgs_cosines'] = kron_bfgs_cosines
         if params['if_record_res_grad_norm']:
             res_grad_norms = []
             data_['res_grad_norms'] = res_grad_norms
@@ -11227,9 +12297,9 @@ def train(args):
         if 'if_record_kron_bfgs_matrix_norm_per_iter' in params and\
         params['if_record_kron_bfgs_matrix_norm_per_iter']:
             data_['kron_bfgs_matrix_norms_per_iter'] = []
-        if 'if_record_loss_per_iter' in params and\
-            params['if_record_loss_per_iter'] == True:
-            data_['losses_per_iter'] = []
+#         if 'if_record_loss_per_iter' in params and\
+#             params['if_record_loss_per_iter'] == True:
+#             data_['losses_per_iter'] = []
         if 'if_record_kfac_G_inv_norm_per_iter' in params and\
             params['if_record_kfac_G_inv_norm_per_iter'] == True:
             data_['kfac_G_inv_norms_per_iter'] = []
@@ -11337,11 +12407,12 @@ def train(args):
 #     model_test = copy.deepcopy(model)
     
     while not get_if_stop(args, i+1, iter_per_epoch, timesCPU):
-        
-#         torch.cuda.empty_cache()
 
         i += 1
         params['i'] = i
+        
+#         print('i')
+#         print(i)
         
 #         if params['if_test_mode']:
         
@@ -11372,14 +12443,6 @@ def train(args):
         # get minibatch
         X_mb, t_mb = dataset.train.next_batch(N1)
         
-#         if i % iter_per_record == 0:
-            
-#             print('i')
-#             print(i)
-            
-#             print('t_mb')
-#             print(t_mb)
-        
 #         X_mb = torch.from_numpy(X_mb).to(device)
         
         if not params['if_dataset_onTheFly']:
@@ -11403,43 +12466,29 @@ def train(args):
         # Forward
         z, a, h = model.forward(X_mb)
         
-#         print('z.size()')
-#         print(z.size())
-        
-#         print('t_mb.size()')
-#         print(t_mb.size())
-        
-#         sys.exit()
-        
         reduction = 'mean'
 #         loss = get_regularized_loss_from_z(
 #             model, z, t_mb, reduction, params['tau'])
         loss = get_loss_from_z(
             model, z, t_mb, reduction)
+    
+#         print('loss.item()')
+#         print(loss.item())
+    
+        params['unregularized_minibatch_loss_i_no_MA'] = loss.item()
         
         if i == 0:
-            
-#             print('loss')
-#             print(loss)
-            
-#             sys.exit()
             
             unregularized_minibatch_loss_i = loss.item()
         
             train_unregularized_minibatch_losses.append(
             unregularized_minibatch_loss_i)
             
-#             print('get_acc_from_z(model, params, z, t_mb)')
-#             print(get_acc_from_z(model, params, z, t_mb))
-            
             minibatch_acc_i = get_acc_from_z(model, params, z, t_mb)
             
-#             sys.exit()
             train_minibatch_acces.append(minibatch_acc_i)
             
         else:
-            
-#             sys.exit()
             
             minibatch_acc_i =\
             0.9 * minibatch_acc_i + 0.1 * get_acc_from_z(model, params, z, t_mb)
@@ -11448,28 +12497,20 @@ def train(args):
             0.9 * unregularized_minibatch_loss_i + 0.1 * loss.item()
     
 #         if params['if_test_mode']:
-#             print('loss.item()')
-#             print(loss.item())
-    
-        if params['if_test_mode']:
-            if 'if_record_loss_per_iter' in params and\
-                params['if_record_loss_per_iter'] == True:
+#             if 'if_record_loss_per_iter' in params and\
+#                 params['if_record_loss_per_iter'] == True:
                 
-                tau = params['tau']
+#                 tau = params['tau']
                 
-                if tau == 0:
-                    data_['losses_per_iter'].append(loss.item())
-                else:
-#                 if params['tau'] != 0:
+#                 if tau == 0:
+#                     data_['losses_per_iter'].append(loss.item())
+#                 else:
 
-                    data_['losses_per_iter'].append(
-                        loss.item() +\
-                    0.5 * tau *\
-    get_dot_product_torch(model.layers_weight, model.layers_weight).item()
-                    )
-
-#                     print('error: not working for tau != 0')
-#                     sys.exit()
+#                     data_['losses_per_iter'].append(
+#                         loss.item() +\
+#                     0.5 * tau *\
+#     get_dot_product_torch(model.layers_weight, model.layers_weight).item()
+#                     )
 
 
         # backward and gradient
@@ -11714,7 +12755,8 @@ def train(args):
                            'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                            'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                            'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                           'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                           'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                           'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
             data_, params = shampoo_update(data_, params)
         elif algorithm in ['Fisher-BD']:
             data_, params = Fisher_BD_update(data_, params)
@@ -11753,65 +12795,16 @@ def train(args):
             data_, params = GI_Fisher_update(data_, params)
         elif algorithm == 'SMW-Fisher-BD':
             data_, params = SMW_Fisher_BD_update(data_, params)
-        elif algorithm in ['Kron-BFGS',
-                           'Kron-BFGS-no-norm-gate',
-                           'Kron-BFGS-no-norm-gate-momentum-s-y',
-                           'Kron-BFGS-no-norm-gate-momentum-s-y-damping',
-                           'Kron-BFGS-no-norm-gate-damping',
-                           'Kron-BFGS-no-norm-gate-Shiqian-damping',
-                           'Kron-BFGS-homo-no-norm-gate-damping',
-                           'Kron-BFGS-homo-no-norm-gate-Shiqian-damping',
-                           'Kron-BFGS-homo-no-norm-gate-Powell-H-damping',
-                           'Kron-BFGS-homo-no-norm-gate-PowellBDamping',
-                           'Kron-BFGS-homo-no-norm-gate-PowellHDampingV2',
-                           'Kron-BFGS-homo-no-norm-gate-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-PowellDoubleDampingV2',
-                           'Kron-BFGS-homo-no-norm-gate-momentum-s-y-damping',
-                           'Kron-BFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchANotDamped-HessianActionV2-momentum-s-y-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-SqrtT',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2-KFACSplitting',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2-extraStep',
-                           'Kron-(L)BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-miniBatchA-HessianActionV2IdentityInitial-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianActionV2-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchA-HessianActionV2-momentum-s-y-DDV2',
-                           'Kron-BFGS(L)-homo-no-norm-gate-miniBatchADamped-HessianActionV2-momentum-s-y-DDV2',
-                           'Kron-BFGS-homo-no-norm-gate-scaledHessianAction-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-HessianActionIdentityInitial-momentum-s-y-Powell-double-damping',
-                           'Kron-LBFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-PowellDoubleDampingSkip',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-DoubleDamping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-H-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-B0-damping',
-                           'Kron-BFGS(L)-homo-no-norm-gate-HessianAction-momentum-s-y-Shiqian-damping',
-                           'Kron-(L)BFGS-homo-no-norm-gate-HessianAction-momentum-s-y-Powell-double-damping',
-                           'Kron-LBFGS-homo-no-norm-gate-momentum-s-y-Powell-double-damping',
-                           'Kron-BFGS-homo-no-norm-gate-Hessian-action-Powell-double-damping',
-                           'Kron-BFGS-homo-identity',
-                           'Kron-BFGS-wrong',
-                           'Kron-BFGS-homo',
-                           'Kron-BFGS-Hessian-action',
-                           'Kron-BFGS-wrong-Hessian-action',
-                           'Kron-BFGS-LM',
-                           'Kron-BFGS-LM-sqrt',
-                           'Kron-BFGS-1st-layer-only']:
-            data_, params = Kron_BFGS_update_v2(data_, params)
+        elif algorithm in kbfgs_list_algorithm:
+
+            # abandoned
+            assert algorithm not in ['Kron-BFGS-block']
             
+            data_, params = Kron_BFGS_update_v2(data_, params)
+
             if params['nan_detected']:
                 break
-            
-        elif algorithm in ['Kron-BFGS-block']:
-            data_, params = Kron_BFGS_update(data_, params)
+
         elif algorithm == 'Kron-SGD':
             data_, params = Kron_SGD_update(data_, params)
         elif algorithm in ['BFGS',
@@ -11932,7 +12925,11 @@ def train(args):
         if params['if_yura']:
             p_torch = get_yura(p_torch, data_, params)
             
-        
+#         print('get_dot_product_torch(data_[model_grad_torch_unregularized], data_[model_grad_torch_unregularized])')
+#         print(get_dot_product_torch(data_['model_grad_torch_unregularized'], data_['model_grad_torch_unregularized']))
+            
+#         print('get_dot_product_torch(p_torch, p_torch)')
+#         print(get_dot_product_torch(p_torch, p_torch))
 
         model = update_parameter(p_torch, model, params)
         
@@ -11969,6 +12966,29 @@ def train(args):
 #             print('load model (end) from disk')
 
         if get_if_nan(model.layers_weight):
+        
+            print('get_if_nan(p_torch)')
+            print(get_if_nan(p_torch))
+            
+            for l in range(len(p_torch)):
+                for key in p_torch[l]:
+                    
+                    print('key')
+                    print(key)
+                    
+                    print('torch.sum(p_torch[l][key] != p_torch[l][key])')
+                    print(torch.sum(p_torch[l][key] != p_torch[l][key]))
+                    
+                    
+                    
+                    if torch.sum(p_torch[l][key] != p_torch[l][key]):
+                        
+                        print('p_torch[l][key].size()')
+                        print(p_torch[l][key].size())
+                        
+                        print('p_torch[l][key]')
+                        print(p_torch[l][key])
+        
             print('Error: nan in model.layers_weight')
             break
 
@@ -12489,10 +13509,9 @@ def train(args):
         if params['if_record_p_norm']:
             p_norms = np.asarray(p_norms)
             dict_result['p_norms'] = p_norms
-        if params['if_record_kron_bfgs_cosine']:
-            kron_bfgs_cosines = data_['kron_bfgs_cosines']
-#             kfac_p_norms = np.asarray(kfac_p_norms)
-            dict_result['kron_bfgs_cosines'] = kron_bfgs_cosines
+#         if params['if_record_kron_bfgs_cosine']:
+#             kron_bfgs_cosines = data_['kron_bfgs_cosines']
+#             dict_result['kron_bfgs_cosines'] = kron_bfgs_cosines
         if params['if_record_kfac_p_norm']:
             kfac_p_norms = data_['kfac_p_norms']
             kfac_p_norms = np.asarray(kfac_p_norms)
@@ -12535,9 +13554,9 @@ def train(args):
             params['if_record_kron_bfgs_update_status'] == True:
             dict_result['kron_bfgs_update_status'] = data_['kron_bfgs_update_status']
             
-        if 'if_record_loss_per_iter' in params and\
-            params['if_record_loss_per_iter'] == True:
-            dict_result['losses_per_iter'] = data_['losses_per_iter']
+#         if 'if_record_loss_per_iter' in params and\
+#             params['if_record_loss_per_iter'] == True:
+#             dict_result['losses_per_iter'] = data_['losses_per_iter']
             
         if 'if_record_kfac_G_inv_norm_per_iter' in params and\
         params['if_record_kfac_G_inv_norm_per_iter']:
@@ -12602,10 +13621,6 @@ def train(args):
         
     
     os.makedirs(path_to_goolge_drive_dir + name_result, exist_ok = True)
-    
-#     print('dict_result[params]')
-#     print(dict_result['params'])
-#     sys.exit()
 
     fake_args = {}
     fake_args['algorithm_dict'] = {}
@@ -12633,7 +13648,7 @@ def train(args):
         
 #         print(path_to_goolge_drive_dir + name_result + old_pkl_name)
         print(name_result + old_pkl_name)
-    
+        
         os.remove(path_to_goolge_drive_dir + name_result + old_pkl_name)
 
     import datetime        
@@ -12710,3 +13725,4 @@ def get_sort_profile():
     argsort_list_percent_time = np.argsort(-list_percent_time)
     for i in argsort_list_percent_time:
         print(list_line_1[i])
+

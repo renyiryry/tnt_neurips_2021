@@ -3,42 +3,45 @@ import numpy as np
 import sys
 import os
 
-from utils_git.utils import get_opposite, get_BFGS_formula_v2
+from utils_git.utils import get_opposite, get_BFGS_formula_v2, coupled_newton
 
-list_algorithm = ['shampoo',
-                 'shampoo-allVariables',
-                 'shampoo-allVariables-warmStart',
-                 'shampoo-allVariables-warmStart-lessInverse',
-                 'shampoo-allVariables-filterFlattening-warmStart',
-                 'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
-                 'shampoo-no-sqrt',
-                 'shampoo-no-sqrt-Fisher',
-                 'matrix-normal',
-                 'matrix-normal-allVariables',
-                 'matrix-normal-allVariables-warmStart',
-                 'matrix-normal-allVariables-warmStart-MaxEigDamping',
-                 'matrix-normal-allVariables-warmStart-noPerDimDamping',
-                 'matrix-normal-same-trace',
-                 'matrix-normal-same-trace-warmStart',
-                 'matrix-normal-same-trace-warmStart-noPerDimDamping',
-                 'matrix-normal-same-trace-allVariables',
-                 'matrix-normal-same-trace-allVariables-warmStart',
-                 'matrix-normal-same-trace-allVariables-warmStart-AvgEigDamping',
-                 'matrix-normal-same-trace-allVariables-warmStart-MaxEigDamping',
-                 'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
-                 'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
-                 'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping'
-                 'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
-                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
-                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
-                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-MaxEigWithEpsilonDamping',
-                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-AvgEigWithEpsilonDamping',
-                 'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping',
-                 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart',
-                 'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
-                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
-                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]
+list_algorithm = [
+    'shampoo',
+    'shampoo-allVariables',
+    'shampoo-allVariables-warmStart',
+    'shampoo-allVariables-warmStart-lessInverse',
+    'shampoo-allVariables-filterFlattening-warmStart',
+    'shampoo-allVariables-filterFlattening-warmStart-lessInverse',
+    'shampoo-no-sqrt',
+    'shampoo-no-sqrt-Fisher',
+    'matrix-normal',
+    'matrix-normal-allVariables',
+    'matrix-normal-allVariables-warmStart',
+    'matrix-normal-allVariables-warmStart-MaxEigDamping',
+    'matrix-normal-allVariables-warmStart-noPerDimDamping',
+    'matrix-normal-same-trace',
+    'matrix-normal-same-trace-warmStart',
+    'matrix-normal-same-trace-warmStart-noPerDimDamping',
+    'matrix-normal-same-trace-allVariables',
+    'matrix-normal-same-trace-allVariables-warmStart',
+    'matrix-normal-same-trace-allVariables-warmStart-AvgEigDamping',
+    'matrix-normal-same-trace-allVariables-warmStart-MaxEigDamping',
+    'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
+    'matrix-normal-same-trace-allVariables-KFACReshaping-warmStart',
+    'matrix-normal-same-trace-allVariables-warmStart-noPerDimDamping'
+    'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
+    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart',
+    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-lessInverse',
+    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-MaxEigWithEpsilonDamping',
+    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-AvgEigWithEpsilonDamping',
+    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping',
+    'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart',
+    'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
+    'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
+    'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
+    'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+    'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',
+]
 
 def get_tensor_reshape_back(delta_l, l, name_variable, params):
     
@@ -96,7 +99,8 @@ def get_tensor_reshape_option(l, name_variable, params):
                                'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                               'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                               'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                               'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
         
         if params['layers_params'][l]['name'] in ['conv',
                                                   'conv-no-activation',
@@ -121,7 +125,8 @@ def get_tensor_reshape_option(l, name_variable, params):
                                              'matrix-normal-same-trace-allVariables-filterFlattening-warmStart',
                                              'matrix-normal-correctFisher-allVariables-filterFlattening-warmStart-lessInverse',
                                              'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart',
-                                             'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',]:
+                                             'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
+                                             'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
                     return 'filter-flattening'
                 else:
                     print('params[algorithm]')
@@ -455,7 +460,8 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                  'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping',
                                  'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart',
                                  'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
-                                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',]:
+                                 'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
+                                 'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
         if i < inverse_freq:
 #             inverse_freq = 1
             inverse_freq = params['shampoo_update_freq']
@@ -514,7 +520,8 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                          'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                          'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                          'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                         'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                                         'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                         'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
 
                 # tau is ignored since we tune shampoo_epsilon
 
@@ -569,7 +576,8 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                      'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                     'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
             1
         else:
             print('Error: unkown algo for power_preconditioner for ' + params['algorithm'])
@@ -593,6 +601,9 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-MaxEigWithEpsilonDamping',
                                    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-AvgEigWithEpsilonDamping',
                                    'matrix-normal-correctFisher-allVariables-KFACReshaping-warmStart-TraceWithEpsilonDamping',]:
+            
+            if params['shampoo_if_coupled_newton']:
+                sys.exit()
 
 
 
@@ -627,12 +638,6 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                     
                     axes = list(range(len(g_W.size())))
                     axes.remove(ii)
-                    
-#                     print('g_W.size()')
-#                     print(g_W.size())
-                    
-#                     print('axes')
-#                     print(axes)
                     
                     if len(axes):
                         s = torch.mean(g_W.data, dim=axes)
@@ -678,7 +683,10 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                      'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                     'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
+            
+            
 
             c_trace = torch.trace(H[l][name_variable][0])
 
@@ -704,17 +712,19 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
 #                         else:
 #                             epsilon = torch.lobpcg(H_l_same_trace.data)[0].item()
 
-#                         print('torch.linalg.norm(H_l_same_trace.data, ord=2)')
-#                         print(torch.linalg.norm(H_l_same_trace.data, ord=2))
-
-#                         sys.exit()
-
                     epsilon = torch.linalg.norm(H_l_same_trace.data, ord=2).item()
 
                 H_l_LM_same_trace =\
                 H_l_same_trace + epsilon * torch.eye(list_n[ii], device=device)
-
-                H_l_LM_minus_2k.append(H_l_LM_same_trace.inverse())
+                
+            
+            
+                if params['shampoo_if_coupled_newton']:
+                    H_l_LM_minus_2k.append(
+                        coupled_newton(H_l_LM_same_trace, 1, 0, device, True,)
+                    )
+                else:
+                    H_l_LM_minus_2k.append(H_l_LM_same_trace.inverse())
 
 #                     H_l_LM_minus_2k.append(H_l_LM_same_trace.cpu().inverse().cuda())
 
@@ -734,64 +744,85 @@ def shampoo_inversion_per_variable(model_grad_N1, l, name_variable, data_, param
                                      'shampoo-no-sqrt',
                                      'shampoo-no-sqrt-Fisher']:
 
-#                 print('error: need to change because data_[shampoo_H] is dict now')
-#                 sys.exit()
-
             for ii in range(len(H[l][name_variable])):
-#                     diag_ind = np.diag_indices(H[l][ii].shape[0])
-#                     H_l_ii_LM = H[l][ii]
-#                     H_l_ii_LM[diag_ind[0], diag_ind[1]] +=\
-#                     epsilon * torch.ones(H[l][ii].shape[0], device=device)
+            
+                if params['shampoo_if_coupled_newton']:
+            
+                    H_l_LM_minus_2k.append(
+                        coupled_newton(
+                            H[l][name_variable][ii], 
+                            len(H[l][name_variable]) / power_preconditioner,
+                            epsilon, 
+                            device,
+                            False,
+                        )
+                    )
+                
+#                     print('H_l_LM_minus_2k[-1].size()')
+#                     print(H_l_LM_minus_2k[-1].size())
+                    
+#                     print('H_l_LM_minus_2k[-1]')
+#                     print(H_l_LM_minus_2k[-1])
+                    
+#                     print('H[l][name_variable][ii]')
+#                     print(H[l][name_variable][ii])
+                    
+#                     print('torch.mm(H_l_LM_minus_2k[-1], H[l][name_variable][ii]) + epsilon * H_l_LM_minus_2k[-1]')
+#                     print(torch.mm(H_l_LM_minus_2k[-1], H[l][name_variable][ii]) + epsilon * H_l_LM_minus_2k[-1])
+                    
+#                     sys.exit()
+                    
+                else:
+                    # this is the default of params['shampoo_if_coupled_newton']
 
-                H_l_ii_LM = H[l][name_variable][ii] + epsilon * torch.eye(H[l][name_variable][ii].shape[0], device=device)
+                    H_l_ii_LM = H[l][name_variable][ii] + epsilon * torch.eye(H[l][name_variable][ii].shape[0], device=device)
 
-#                 if_np_svd = False
-#                 if_cpu_svd = False
+    #                 if_np_svd = False
+    #                 if_cpu_svd = False
 
-#                     try:
-#                         H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
-#                     except:
-#                         print('H_l_ii_LM')
-#                         print(H_l_ii_LM)
+    #                     try:
+    #                         H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
+    #                     except:
 
-#                         print('H_l_ii_LM.detach().cpu().numpy()')
-#                         print(H_l_ii_LM.detach().cpu().numpy())
+    #                         np.save('gpu_svd.npy', H_l_ii_LM.detach().cpu().numpy())
 
-#                         np.save('gpu_svd.npy', H_l_ii_LM.detach().cpu().numpy())
-
-#                         import pickle
-#                         with open('gpu_svd.pkl', 'wb') as fp:
-#                             pickle.dump(H_l_ii_LM.detach().cpu().numpy(), fp)
-
-#                         sys.exit()
+    #                         import pickle
+    #                         with open('gpu_svd.pkl', 'wb') as fp:
+    #                             pickle.dump(H_l_ii_LM.detach().cpu().numpy(), fp)
 
 
-#                     H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
+    #                     H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
 
-#                 H_l_U, H_l_S, H_l_V = get_svd_by_cpu(H_l_ii_LM, params)
+    #                 H_l_U, H_l_S, H_l_V = get_svd_by_cpu(H_l_ii_LM, params)
 
 
-                try:
-                    H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
+                    try:
+                        H_l_U, H_l_S, H_l_V = torch.svd(H_l_ii_LM)
 
-                    if torch.sum(H_l_S != H_l_S) or\
-                    torch.sum(H_l_U != H_l_U) or\
-                    torch.sum(H_l_V != H_l_V):
+                        if torch.sum(H_l_S != H_l_S) or\
+                        torch.sum(H_l_U != H_l_U) or\
+                        torch.sum(H_l_V != H_l_V):
+                            H_l_U, H_l_S, H_l_V = get_svd_by_cpu(H_l_ii_LM, params)
+                    except:
                         H_l_U, H_l_S, H_l_V = get_svd_by_cpu(H_l_ii_LM, params)
-                except:
-                    H_l_U, H_l_S, H_l_V = get_svd_by_cpu(H_l_ii_LM, params)
 
 
 
 
 
-                power_H_l_LM_minus_2k = power_preconditioner / len(H[l][name_variable])
+                    power_H_l_LM_minus_2k = power_preconditioner / len(H[l][name_variable])
 
-                H_l_LM_minus_2k.append(
-                    torch.mm(
+                    H_l_LM_minus_2k.append(
                         torch.mm(
-                            H_l_U, torch.diag(1/(H_l_S**power_H_l_LM_minus_2k))), H_l_V.t())
-                )
+                            torch.mm(
+                                H_l_U, 
+                                torch.diag(
+                                    1/(H_l_S**power_H_l_LM_minus_2k)
+                                )
+                            ), 
+                            H_l_V.t()
+                        )
+                    )
 
         else:
             print('Error: unkown algo in svd for ' + params['algorithm'])
@@ -857,7 +888,8 @@ def shampoo_compute_direction_per_variable(model_grad, l, name_variable, data_, 
                                      'matrix-normal-correctFisher-same-trace-allVariables-filterFlattening-warmStart-lessInverse',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping',
                                      'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart',
-                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',]:
+                                     'matrix-normal-correctFisher-same-trace-allVariables-KFACReshaping-warmStart-lessInverse',
+                                     'matrix-normal-EF-same-trace-allVariables-filterFlattening-warmStart',]:
             1
         else:
             print('Error: unknown algo in tensor dot for ' + params['algorithm'])
