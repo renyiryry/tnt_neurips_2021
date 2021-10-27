@@ -1,5 +1,9 @@
 # TNT
 
+This is the code for the paper [Tensor Normal Training for Deep Learning Models][tnt-paper].
+
+[tnt-paper]: https://arxiv.org/abs/2106.02925
+
 ## Specification of dependencies
 
 Python 3.7.6;
