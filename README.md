@@ -22,3 +22,15 @@ psutil 5.6.7
 
 See Demo.ipynb for results and command to produce the results.
 
+
+## BibTeX
+
+```
+@article{ren2021tensor,
+  title={Tensor Normal Training for Deep Learning Models},
+  author={Ren, Yi and Goldfarb, Donald},
+  journal={Advances in Neural Information Processing Systems},
+  volume={34},
+  year={2021}
+}
+```
